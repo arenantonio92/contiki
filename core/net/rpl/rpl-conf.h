@@ -375,4 +375,15 @@
 #define RPL_SEC_LVL  1
 #endif
 
+/*
+ * RPL Security: Replay Protection
+ * Set to 1 to enable, default: disabled
+ */
+
+#ifdef RPL_CONF_SEC_REPLAY_PROTECTION
+#define RPL_SEC_REPLAY_PROTECTION   RPL_CONF_SEC_REPLAY_PROTECTION
+#else
+#define RPL_SEC_REPLAY_PROTECTION   0
+#endif
+
 #endif /* RPL_CONF_H */

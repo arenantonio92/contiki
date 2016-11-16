@@ -82,6 +82,9 @@ static rpl_of_t * const objective_functions[] = RPL_SUPPORTED_OFS;
 /*---------------------------------------------------------------------------*/
 /* Per-parent RPL information */
 NBR_TABLE_GLOBAL(rpl_parent_t, rpl_parents);
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+NBR_TABLE_GLOBAL(rpl_child_t, rpl_children);
+#endif	/* RPL_REPLAY_PROTECTION */
 /*---------------------------------------------------------------------------*/
 /* Allocate instance table. */
 rpl_instance_t instance_table[RPL_MAX_INSTANCES];
@@ -135,11 +138,23 @@ nbr_callback(void *ptr)
   rpl_remove_parent(ptr);
 }
 
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+static void
+children_callback(void *ptr){
+  nbr_table_remove(rpl_children, ptr);
+}
+#endif	/* RPL_REPLAY_PROTECTION */
+
 void
 rpl_dag_init(void)
 {
   nbr_table_register(rpl_parents, (nbr_table_callback *)nbr_callback);
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+  nbr_table_register(rpl_children, (nbr_table_callback *)children_callback);
+#endif	/* RPL_REPLAY_PROTECTION */
 }
+
+
 /*---------------------------------------------------------------------------*/
 rpl_parent_t *
 rpl_get_parent(uip_lladdr_t *addr)
@@ -697,6 +712,10 @@ rpl_add_parent(rpl_dag_t *dag, rpl_dio_t *dio, uip_ipaddr_t *addr)
       p->dag = dag;
       p->rank = dio->rank;
       p->dtsn = dio->dtsn;
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+      p->sec_counter = 0;
+      p->counter_trusted = RPL_SEC_COUNTER_NOT_TRUSTED;
+#endif
 #if RPL_WITH_MC
       memcpy(&p->mc, &dio->mc, sizeof(p->mc));
 #endif /* RPL_WITH_MC */

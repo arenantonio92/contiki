@@ -86,6 +86,12 @@ typedef uint16_t rpl_ocp_t;
 #define RPL_OCP_OF0     0
 #define RPL_OCP_MRHOF   1
 
+/* RPL Replay Protection macro */
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+#define RPL_SEC_COUNTER_NOT_TRUSTED    0
+#define RPL_SEC_COUNTER_TRUSTED        1
+#endif
+
 struct rpl_metric_object_energy {
   uint8_t flags;
   uint8_t energy_est;
@@ -116,11 +122,27 @@ struct rpl_parent {
 #if RPL_WITH_MC
   rpl_metric_container_t mc;
 #endif /* RPL_WITH_MC */
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+  uint32_t sec_counter;
+  uint8_t counter_trusted;
+#endif	/* RPL_REPLAY_PROTECTION */
   rpl_rank_t rank;
   uint8_t dtsn;
   uint8_t flags;
 };
 typedef struct rpl_parent rpl_parent_t;
+/*---------------------------------------------------------------------------*/
+/* RPL child type: needed in RPL Security Replay Protection to save
+ * child's incoming counter
+ */
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+struct rpl_child{
+	uip_ipaddr_t child_addr;
+	uint32_t sec_counter;
+    uint8_t counter_trusted;
+};
+typedef struct rpl_child rpl_child_t;
+#endif
 /*---------------------------------------------------------------------------*/
 /* RPL DIO prefix suboption */
 struct rpl_prefix {
@@ -309,6 +331,11 @@ int rpl_srh_get_next_hop(uip_ipaddr_t *ipaddr);
 
 /* Per-parent RPL information */
 NBR_TABLE_DECLARE(rpl_parents);
+
+/* Child table */
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+NBR_TABLE_DECLARE(rpl_children);
+#endif
 
 /**
  * RPL modes

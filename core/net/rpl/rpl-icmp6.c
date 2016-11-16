@@ -101,7 +101,10 @@ static void dis_input(void);
 static void dio_input(void);
 static void dao_input(void);
 static void dao_ack_input(void);
+
+#if RPL_SECURITY
 static void cc_input(void);
+#endif
 
 static void dao_output_target_seq(rpl_parent_t *parent, uip_ipaddr_t *prefix,
                                   uint8_t lifetime, uint8_t seq_no);
@@ -1206,6 +1209,10 @@ dao_input_storing(void)
         PRINT6ADDR(rpl_get_parent_ipaddr(dag->preferred_parent));
         PRINTF("\n");
 
+       // buffer = UIP_ICMP_PAYLOAD;
+       // buffer[3] = out_seq; /* add an outgoing seq no before fwd */
+       // uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
+        //               ICMP6_RPL, RPL_CODE_DAO, buffer_length);
         dao_output_target_seq(dag->preferred_parent, &prefix, lifetime, out_seq);
       }
     }
@@ -1291,6 +1298,10 @@ fwd_dao:
       PRINT6ADDR(rpl_get_parent_ipaddr(dag->preferred_parent));
       PRINTF(" in seq: %d out seq: %d\n", sequence, out_seq);
 
+      //buffer = UIP_ICMP_PAYLOAD;
+      //buffer[3] = out_seq; /* add an outgoing seq no before fwd */
+      //uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
+      //               ICMP6_RPL, RPL_CODE_DAO, buffer_length);
       dao_output_target_seq(dag->preferred_parent, &prefix, lifetime, out_seq);
     }
     if(should_ack) {
@@ -1413,7 +1424,7 @@ dao_input(void)
   uint8_t *buffer;
   rpl_instance_t *instance;
   uint8_t instance_id;
-  int pos;
+
 
   /* Destination Advertisement Object */
   PRINTF("RPL: Received a DAO from ");
@@ -1421,10 +1432,9 @@ dao_input(void)
   PRINTF("\n");
 
   buffer = UIP_ICMP_PAYLOAD;
-  pos = 0;
 
 #if RPL_SECURITY
-
+  int pos;
   uint8_t buffer_length;
   int sec_len;
 
@@ -1442,6 +1452,8 @@ dao_input(void)
   uint8_t mic_len;      /* n-byte MAC length */
 
   int i;
+
+  pos = 0;
 
   timestamp = (buffer[pos++] & RPL_TIMESTAMP_MASK) >> RPL_TIMESTAMP_SHIFT;
   kim = (buffer[pos++] & RPL_KIM_MASK) >> RPL_KIM_SHIFT;
@@ -1522,7 +1534,7 @@ dao_input(void)
 
 #endif /* RPL_SECURITY */
 
-  instance_id = UIP_ICMP_PAYLOAD[0];
+  instance_id = buffer[0];
   instance = rpl_get_instance(instance_id);
   if(instance == NULL) {
     PRINTF("RPL: Ignoring a DAO for an unknown RPL instance(%u)\n",
@@ -2000,6 +2012,8 @@ dao_ack_input(void)
         PRINTF("RPL: Fwd DAO ACK to:");
         PRINT6ADDR(nexthop);
         PRINTF("\n");
+        //buffer[2] = re->state.dao_seqno_in;
+        //uip_icmp6_send(nexthop, ICMP6_RPL, RPL_CODE_DAO_ACK, 4);
         dao_ack_output(instance, nexthop, re->state.dao_seqno_in, status);
       }
 
@@ -2012,10 +2026,13 @@ dao_ack_input(void)
     }
   }
 #endif /* RPL_WITH_DAO_ACK */
+
   uip_clear_buf();
 
+#if RPL_SECURITY
 discard:
   uip_clear_buf();
+#endif
 }
 /*---------------------------------------------------------------------------*/
 void
@@ -2118,12 +2135,16 @@ dao_ack_output(rpl_instance_t *instance, uip_ipaddr_t *dest, uint8_t sequence,
 #endif /* RPL_WITH_DAO_ACK */
 }
 /*---------------------------------------------------------------------------*/
+#if RPL_SECURITY
 static void
 cc_input()
 {
 	/*
 	 * TODO
 	 */
+	int i=0;
+	i++;
+	cc_output();
 }
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
@@ -2133,7 +2154,11 @@ cc_output()
 	/*
 	 * TODO
 	 */
+	int i=0;
+	i++;
+	i++;
 }
+#endif
 /*---------------------------------------------------------------------------*/
 void
 rpl_icmp6_register_handlers()
