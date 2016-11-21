@@ -55,6 +55,10 @@
 #include "lib/memb.h"
 #include "sys/ctimer.h"
 
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+#include "net/packetbuf.h"
+#endif
+
 #include <limits.h>
 #include <string.h>
 
@@ -140,7 +144,7 @@ nbr_callback(void *ptr)
 
 #if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
 static void
-sec_nodes_callback(void *ptr){
+children_callback(void *ptr){
   nbr_table_remove(rpl_sec_nodes, ptr);
 }
 #endif	/* RPL_REPLAY_PROTECTION */
@@ -727,14 +731,16 @@ rpl_add_sec_node(uip_ipaddr_t *addr, uint16_t nonce)
 {
 	rpl_sec_node_t *p = NULL;
 
-	const uip_lladdr_t *lladdr = uip_ds6_nbr_lladdr_from_ipaddr(addr);
+	const uip_lladdr_t *lladdr = (uip_lladdr_t *)packetbuf_addr(PACKETBUF_ADDR_SENDER);
 
-	PRINTF("RPL: rpl_sec_node lladdr %p ", lladdr);
+	PRINTF("RPL: rpl_sec_node lladdr ");
+	PRINTLLADDR(lladdr);
+	PRINTF(", IP: ");
 	PRINT6ADDR(addr);
 	PRINTF("\n");
 
 	if(lladdr != NULL) {
-		p = nbr_table_add_lladdr(rpl_sec_nodes, (linkaddr_t *lladdr),
+		p = nbr_table_add_lladdr(rpl_sec_nodes, (linkaddr_t *)lladdr,
 					NBR_TABLE_REASON_RPL_REPLAY_PROTECTION, NULL);
 		if(p == NULL) {
 			PRINTF("RPL: rpl_add_sec_node p NULL\n");
@@ -747,7 +753,7 @@ rpl_add_sec_node(uip_ipaddr_t *addr, uint16_t nonce)
 	return p;
 }
 
-static rpl_sec_node_t *
+rpl_sec_node_t *
 rpl_find_sec_node(uip_ipaddr_t *addr)
 {
 	uip_ds6_nbr_t *ds6_nbr = uip_ds6_nbr_lookup(addr);
