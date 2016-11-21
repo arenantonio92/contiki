@@ -122,10 +122,6 @@ struct rpl_parent {
 #if RPL_WITH_MC
   rpl_metric_container_t mc;
 #endif /* RPL_WITH_MC */
-#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
-  uint32_t sec_counter;
-  uint8_t counter_trusted;
-#endif	/* RPL_REPLAY_PROTECTION */
   rpl_rank_t rank;
   uint8_t dtsn;
   uint8_t flags;
@@ -136,12 +132,17 @@ typedef struct rpl_parent rpl_parent_t;
  * child's incoming counter
  */
 #if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
-struct rpl_child{
-	uip_ipaddr_t child_addr;
+struct rpl_sec_node{
+	uint8_t counter_trusted;
 	uint32_t sec_counter;
-    uint8_t counter_trusted;
+    /* Lifetime expressed in seconds, every lifetime seconds
+     * we check is this node is in the ds6_neighbors table
+     * If the node is UNTRUSTED, this number is the nonce used
+     * in the challenge/response, otherwise (node TRUSTED) is the lifetime.
+     */
+    uint16_t lifetime_nonce;
 };
-typedef struct rpl_child rpl_child_t;
+typedef struct rpl_sec_node rpl_sec_node_t;
 #endif
 /*---------------------------------------------------------------------------*/
 /* RPL DIO prefix suboption */
@@ -334,7 +335,7 @@ NBR_TABLE_DECLARE(rpl_parents);
 
 /* Child table */
 #if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
-NBR_TABLE_DECLARE(rpl_children);
+NBR_TABLE_DECLARE(rpl_sec_nodes);
 #endif
 
 /**

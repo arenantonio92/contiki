@@ -83,7 +83,7 @@ static rpl_of_t * const objective_functions[] = RPL_SUPPORTED_OFS;
 /* Per-parent RPL information */
 NBR_TABLE_GLOBAL(rpl_parent_t, rpl_parents);
 #if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
-NBR_TABLE_GLOBAL(rpl_child_t, rpl_children);
+NBR_TABLE_GLOBAL(rpl_sec_node_t, rpl_sec_nodes);
 #endif	/* RPL_REPLAY_PROTECTION */
 /*---------------------------------------------------------------------------*/
 /* Allocate instance table. */
@@ -140,8 +140,8 @@ nbr_callback(void *ptr)
 
 #if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
 static void
-children_callback(void *ptr){
-  nbr_table_remove(rpl_children, ptr);
+sec_nodes_callback(void *ptr){
+  nbr_table_remove(rpl_sec_nodes, ptr);
 }
 #endif	/* RPL_REPLAY_PROTECTION */
 
@@ -150,7 +150,7 @@ rpl_dag_init(void)
 {
   nbr_table_register(rpl_parents, (nbr_table_callback *)nbr_callback);
 #if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
-  nbr_table_register(rpl_children, (nbr_table_callback *)children_callback);
+  nbr_table_register(rpl_sec_nodes, (nbr_table_callback *)children_callback);
 #endif	/* RPL_REPLAY_PROTECTION */
 }
 
@@ -712,10 +712,6 @@ rpl_add_parent(rpl_dag_t *dag, rpl_dio_t *dio, uip_ipaddr_t *addr)
       p->dag = dag;
       p->rank = dio->rank;
       p->dtsn = dio->dtsn;
-#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
-      p->sec_counter = 0;
-      p->counter_trusted = RPL_SEC_COUNTER_NOT_TRUSTED;
-#endif
 #if RPL_WITH_MC
       memcpy(&p->mc, &dio->mc, sizeof(p->mc));
 #endif /* RPL_WITH_MC */
@@ -724,6 +720,41 @@ rpl_add_parent(rpl_dag_t *dag, rpl_dio_t *dio, uip_ipaddr_t *addr)
 
   return p;
 }
+/*---------------------------------------------------------------------------*/
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+rpl_sec_node_t *
+rpl_add_sec_node(uip_ipaddr_t *addr, uint16_t nonce)
+{
+	rpl_sec_node_t *p = NULL;
+
+	const uip_lladdr_t *lladdr = uip_ds6_nbr_lladdr_from_ipaddr(addr);
+
+	PRINTF("RPL: rpl_sec_node lladdr %p ", lladdr);
+	PRINT6ADDR(addr);
+	PRINTF("\n");
+
+	if(lladdr != NULL) {
+		p = nbr_table_add_lladdr(rpl_sec_nodes, (linkaddr_t *lladdr),
+					NBR_TABLE_REASON_RPL_REPLAY_PROTECTION, NULL);
+		if(p == NULL) {
+			PRINTF("RPL: rpl_add_sec_node p NULL\n");
+		} else {
+			p->lifetime_nonce = nonce;
+			p->sec_counter = 0;
+			p->counter_trusted = RPL_SEC_COUNTER_NOT_TRUSTED;
+		}
+	}
+	return p;
+}
+
+static rpl_sec_node_t *
+rpl_find_sec_node(uip_ipaddr_t *addr)
+{
+	uip_ds6_nbr_t *ds6_nbr = uip_ds6_nbr_lookup(addr);
+	const uip_lladdr_t *lladdr = uip_ds6_nbr_get_ll(ds6_nbr);
+	return nbr_table_get_from_lladdr(rpl_sec_nodes, (linkaddr_t *)lladdr);
+}
+#endif
 /*---------------------------------------------------------------------------*/
 static rpl_parent_t *
 find_parent_any_dag_any_instance(uip_ipaddr_t *addr)

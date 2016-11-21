@@ -343,6 +343,9 @@ void dio_output(rpl_instance_t *, uip_ipaddr_t *uc_addr);
 void dao_output(rpl_parent_t *, uint8_t lifetime);
 void dao_output_target(rpl_parent_t *, uip_ipaddr_t *, uint8_t lifetime);
 void dao_ack_output(rpl_instance_t *, uip_ipaddr_t *, uint8_t, uint8_t);
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+void cc_output(uip_ipaddr_t *, uint8_t, uint16_t, uint32_t);
+#endif
 void rpl_icmp6_register_handlers(void);
 uip_ds6_nbr_t *rpl_icmp6_update_nbr_table(uip_ipaddr_t *from,
                                           nbr_table_reason_t r, void *data);
@@ -360,6 +363,12 @@ rpl_instance_t *rpl_alloc_instance(uint8_t);
 void rpl_free_dag(rpl_dag_t *);
 void rpl_free_instance(rpl_instance_t *);
 void rpl_purge_dags(void);
+
+/* RPL Security: Replay Protection */
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+rpl_sec_node_t *rpl_add_sec_node(uip_ipaddr_t *addr, uint16_t nonce);
+rpl_sec_node_t *rpl_find_sec_node(uip_ipaddr_t *addr);
+#endif
 
 /* DAG parent management function. */
 rpl_parent_t *rpl_add_parent(rpl_dag_t *, rpl_dio_t *dio, uip_ipaddr_t *);
