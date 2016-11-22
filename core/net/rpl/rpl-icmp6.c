@@ -290,12 +290,11 @@ dis_input(void)
   uint8_t timestamp;
   uint8_t kim;
   uint8_t lvl;
-  uint8_t flags;
   uint32_t counter;
 
   uint8_t key_index;
 
-  uint8_t nonce[RPL_NONCE_LENGTH];
+  uint8_t ccm_nonce[RPL_NONCE_LENGTH];
 
   uint8_t mic[8];
   uint8_t mic_len;      /* n-byte MAC length */
@@ -309,7 +308,7 @@ dis_input(void)
   timestamp = (buffer[pos++] & RPL_TIMESTAMP_MASK) >> RPL_TIMESTAMP_SHIFT;
   kim = (buffer[pos++] & RPL_KIM_MASK) >> RPL_KIM_SHIFT;
   lvl = (buffer[pos++] & RPL_LVL_MASK);
-  flags = buffer[pos++];
+  ++pos; 	/* Flags */
 
 /*  Discard packets with time stamp instead of simple counters,
  *  Only accept packets with pre installed key
@@ -317,7 +316,7 @@ dis_input(void)
  *  Flags must be zero
  */
 
-  if((timestamp == 1) || (kim != 0) || (lvl > 3) || (flags != 0)) {
+  if((timestamp == 1) || (kim != 0) || (lvl > 3)) {
     goto discard;
   }
 
@@ -329,14 +328,18 @@ dis_input(void)
   uip_ipaddr_copy(&src_addr, &UIP_IP_BUF->srcipaddr);
   rpl_sec_node_t *p = rpl_find_sec_node(&src_addr);
 
-  if(p == NULL){		/* No incoming counter, start challenge/response */
+/* In DIS message, for now, we doesn't start a challenge/response.
+ * Anyway, if the node is trusted, we defend this node from replay attacks.
+ */
+  /*
+  if(p == NULL){		/* No incoming counter, start challenge/response /
       rpl_icmp6_update_nbr_table(&UIP_IP_BUF->srcipaddr,
                                  NBR_TABLE_REASON_RPL_REPLAY_PROTECTION, NULL);
 	  uint16_t nonce;
 	  nonce = random_rand();
 	  p = rpl_add_sec_node(&src_addr, nonce);
 	  if(p == NULL){
-		  PRINTF("RPL: Secure nodes table full, can't add a new neighbor\n");
+		  PRINTF("RPL: Can't add a new neighbor in secure nodes table\n");
 		  goto discard;
 	  } else {
 		  PRINTF("RPL: Start Challenge/Response with ");
@@ -345,12 +348,13 @@ dis_input(void)
 		  cc_output(&src_addr, RPL_CC_REQUEST, nonce, p->sec_counter);
 		  return;
 	  }
-  } else{
+  } */
+  if(p != NULL){
 	  if(p->counter_trusted == RPL_SEC_COUNTER_TRUSTED){
 		  if((p->sec_counter != 0) && (counter == 0)){
 			 PRINTF("RPL: Node reboot, sending CC response with counter %lu\n", p->sec_counter);
 			 cc_output(&src_addr, RPL_CC_RESPONSE, 0, p->sec_counter);
-			 return;
+			 /* NO return, the node is trusted and rebooted, so we send him a DIO */
 		  } else {
 			  if(p->sec_counter >= counter){
 				  PRINTF("RPL: Possible Replay Attack, discard\n");
@@ -391,19 +395,19 @@ dis_input(void)
   UIP_ICMP_BUF->icmpchksum = 0;
 
   for(i = 0; i < 8; i++) {
-    nonce[i] = (UIP_IP_BUF->srcipaddr).u8[(8 + i)];
+    ccm_nonce[i] = (UIP_IP_BUF->srcipaddr).u8[(8 + i)];
   }
-  set32(nonce, 8, counter);
-  nonce[12] = lvl;
+  set32(ccm_nonce, 8, counter);
+  ccm_nonce[12] = lvl;
 
   CCM_STAR.set_key(rpl_key);
 
   if(lvl == 1 || lvl == 3) {  /* RPL_SEC_LVL odd, MAC-mode */
-    CCM_STAR.aead(nonce, buffer + sec_len, buffer_length,
+    CCM_STAR.aead(ccm_nonce, buffer + sec_len, buffer_length,
                   uip_buf + UIP_LLH_LEN, UIP_IPICMPH_LEN + sec_len,
                   mic, mic_len, RPL_DECRYPT);
   } else {      /* RPL_SEC_LVL even, MAC-mode */
-    CCM_STAR.mic(nonce, buffer + sec_len, buffer_length,
+    CCM_STAR.mic(ccm_nonce, buffer + sec_len, buffer_length,
                  uip_buf + UIP_LLH_LEN, UIP_IPICMPH_LEN + sec_len,
                  mic, mic_len);
   }
@@ -413,6 +417,7 @@ dis_input(void)
     goto discard;
   }
 
+  /* CARE: node not trusted can send multiple DIS to lower Enc levels */
   rpl_last_dis.responded = RPL_DIS_NOT_RESPONDED;
   rpl_last_dis.timestamp = timestamp;
   rpl_last_dis.kim = kim;
@@ -463,7 +468,7 @@ dis_output(uip_ipaddr_t *addr)
   int pos;
 #if RPL_SECURITY
   int sec_len;
-  uint8_t nonce[RPL_NONCE_LENGTH];
+  uint8_t ccm_nonce[RPL_NONCE_LENGTH];
   uint8_t mic_len;      /* n-byte MAC length */
   int i;
 #endif
@@ -552,11 +557,11 @@ dis_output(uip_ipaddr_t *addr)
    */
 
   for(i = 0; i < 8; i++) {
-    nonce[i] = (UIP_IP_BUF->srcipaddr).u8[(8 + i)];
+    ccm_nonce[i] = (UIP_IP_BUF->srcipaddr).u8[(8 + i)];
   }
 
-  set32(nonce, 8, rpl_sec_counter);
-  nonce[12] = RPL_SEC_LVL_1;
+  set32(ccm_nonce, 8, rpl_sec_counter);
+  ccm_nonce[12] = RPL_SEC_LVL_1;
 
 #if RPL_SEC_REPLAY_PROTECTION
   if(rpl_sec_counter_inc) {
@@ -570,7 +575,7 @@ dis_output(uip_ipaddr_t *addr)
 
   mic_len = 4;    /* Always send DIS with RPL_SEC_LVL = 1 */
 
-  CCM_STAR.aead(nonce, buffer + sec_len, pos - sec_len,
+  CCM_STAR.aead(ccm_nonce, buffer + sec_len, pos - sec_len,
                 uip_buf + UIP_LLH_LEN, UIP_IPICMPH_LEN + sec_len,
                 buffer + pos, mic_len, RPL_ENCRYPT);
 
@@ -624,7 +629,6 @@ dio_input(void)
   uint8_t timestamp;
   uint8_t kim;
   uint8_t lvl;
-  uint8_t flags;
   uint32_t counter;
 
   uint8_t key_index;
@@ -639,15 +643,14 @@ dio_input(void)
   timestamp = (buffer[i++] & RPL_TIMESTAMP_MASK) >> RPL_TIMESTAMP_SHIFT;
   kim = (buffer[i++] & RPL_KIM_MASK) >> RPL_KIM_SHIFT;
   lvl = (buffer[i++] & RPL_LVL_MASK);
-  flags = buffer[i++];
+  ++i;		/* Flags */
 
 /*  Discard packets with time stamp instead of simple counters,
  *  Only accept packets with pre installed key
  *  Discard unassigned security levels
- *  Flags must be zero
  */
 
-  if((timestamp == 1) || (kim != 0) || (lvl > 3) || (flags != 0)) {
+  if((timestamp == 1) || (kim != 0) || (lvl > 3)) {
     goto discard;
   }
 
@@ -658,26 +661,27 @@ dio_input(void)
   uip_ipaddr_copy(&src_addr, &UIP_IP_BUF->srcipaddr);
   rpl_sec_node_t *p = rpl_find_sec_node(&src_addr);
 
-  uint16_t nonce;
-  nonce = random_rand();
+  uint16_t cc_nonce;
+  cc_nonce = random_rand();
 
 
   if(p == NULL){		/* No incoming counter, start challenge/response */
 	  rpl_icmp6_update_nbr_table(&UIP_IP_BUF->srcipaddr,
 	                             NBR_TABLE_REASON_RPL_REPLAY_PROTECTION, NULL);
-	  p = rpl_add_sec_node(&src_addr, nonce);
+	  p = rpl_add_sec_node(&src_addr, cc_nonce);
 	  if(p == NULL){
 		  PRINTF("RPL: Secure nodes table full, can't add a new neighbor\n");
 		  goto discard;
 	  } else {
 		  PRINTF("RPL: Start Challenge/Response with ");
 		  PRINT6ADDR(&src_addr);
-		  PRINTF(" with nonce: %u \n", nonce);
-		  cc_output(&src_addr, RPL_CC_REQUEST, nonce, p->sec_counter);
+		  PRINTF(" with nonce: %u \n", cc_nonce);
+		  cc_output(&src_addr, RPL_CC_REQUEST, cc_nonce, p->sec_counter);
 		  return;
 	  }
   } else{
 	  if(p->counter_trusted == RPL_SEC_COUNTER_TRUSTED){
+		  /* Watermark!=0 and Incoming counter==0 -> Possible node reboot */
 		  if((p->sec_counter != 0) && (counter == 0)){
 			 PRINTF("RPL: Node reboot, sending CC response with counter %lu\n", p->sec_counter);
 			 cc_output(&src_addr, RPL_CC_RESPONSE, 0, p->sec_counter);
@@ -692,8 +696,8 @@ dio_input(void)
 		  }
 	  } else {
 		 PRINTF("RPL: Node not trusted yet, restart CC Challenge/Response\n");
-		 p->lifetime_nonce = nonce;
-		 cc_output(&src_addr, RPL_CC_REQUEST, nonce, p->sec_counter);
+		 p->lifetime_nonce = cc_nonce;
+		 cc_output(&src_addr, RPL_CC_REQUEST, cc_nonce, p->sec_counter);
 		 return;
 	  }
   }
@@ -918,7 +922,7 @@ dio_output(rpl_instance_t *instance, uip_ipaddr_t *uc_addr)
 #if RPL_SECURITY
   int sec_len;
   uint8_t sec_lvl;
-  uint8_t nonce[RPL_NONCE_LENGTH];
+  uint8_t ccm_nonce[RPL_NONCE_LENGTH];
   uint8_t mic_len;      /* n-byte MAC length */
   int i;
 #endif
@@ -1112,11 +1116,11 @@ dio_output(rpl_instance_t *instance, uip_ipaddr_t *uc_addr)
   UIP_ICMP_BUF->icmpchksum = 0;
 
   for(i = 0; i < 8; i++) {
-    nonce[i] = (UIP_IP_BUF->srcipaddr).u8[(8 + i)];
+	  ccm_nonce[i] = (UIP_IP_BUF->srcipaddr).u8[(8 + i)];
   }
 
-  set32(nonce, 8, rpl_sec_counter);
-  nonce[12] = sec_lvl;
+  set32(ccm_nonce, 8, rpl_sec_counter);
+  ccm_nonce[12] = sec_lvl;
 
 #if RPL_SEC_REPLAY_PROTECTION
   if(rpl_sec_counter_inc) {
@@ -1134,7 +1138,7 @@ dio_output(rpl_instance_t *instance, uip_ipaddr_t *uc_addr)
     } else {
       mic_len = 8;
     }
-    CCM_STAR.aead(nonce,
+    CCM_STAR.aead(ccm_nonce,
                   buffer + sec_len, pos - sec_len,
                   uip_buf + UIP_LLH_LEN, UIP_IPICMPH_LEN + sec_len,
                   buffer + pos, mic_len, RPL_ENCRYPT);
@@ -1144,7 +1148,7 @@ dio_output(rpl_instance_t *instance, uip_ipaddr_t *uc_addr)
     } else {
       mic_len = 8;
     }
-    CCM_STAR.mic(nonce,
+    CCM_STAR.mic(ccm_nonce,
                  buffer + sec_len, pos - sec_len,
                  uip_buf + UIP_LLH_LEN, UIP_IPICMPH_LEN + sec_len,
                  buffer + pos, mic_len);
@@ -1323,10 +1327,6 @@ dao_input_storing(void)
         PRINT6ADDR(rpl_get_parent_ipaddr(dag->preferred_parent));
         PRINTF("\n");
 
-       // buffer = UIP_ICMP_PAYLOAD;
-       // buffer[3] = out_seq; /* add an outgoing seq no before fwd */
-       // uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
-        //               ICMP6_RPL, RPL_CODE_DAO, buffer_length);
         dao_output_target_seq(dag->preferred_parent, &prefix, lifetime, out_seq);
       }
     }
@@ -1412,10 +1412,6 @@ fwd_dao:
       PRINT6ADDR(rpl_get_parent_ipaddr(dag->preferred_parent));
       PRINTF(" in seq: %d out seq: %d\n", sequence, out_seq);
 
-      //buffer = UIP_ICMP_PAYLOAD;
-      //buffer[3] = out_seq; /* add an outgoing seq no before fwd */
-      //uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
-      //               ICMP6_RPL, RPL_CODE_DAO, buffer_length);
       dao_output_target_seq(dag->preferred_parent, &prefix, lifetime, out_seq);
     }
     if(should_ack) {
@@ -1555,7 +1551,6 @@ dao_input(void)
   uint8_t timestamp;
   uint8_t kim;
   uint8_t lvl;
-  uint8_t sec_flags;
   uint32_t counter;
 
   uint8_t key_index;
@@ -1572,20 +1567,65 @@ dao_input(void)
   timestamp = (buffer[pos++] & RPL_TIMESTAMP_MASK) >> RPL_TIMESTAMP_SHIFT;
   kim = (buffer[pos++] & RPL_KIM_MASK) >> RPL_KIM_SHIFT;
   lvl = (buffer[pos++] & RPL_LVL_MASK);
-  sec_flags = buffer[pos++];
+  ++pos;	/* Flags */
 
 /*  Discard packets with time stamp instead of simple counters,
  *  Only accept packets with pre installed key
  *  Discard unassigned security levels
- *  Flags must be zero
  */
 
-  if((timestamp == 1) || (kim != 0) || (lvl > 3) || (sec_flags != 0)) {
+  if((timestamp == 1) || (kim != 0) || (lvl > 3)) {
     goto discard;
   }
 
   counter = get32(buffer, pos);
   pos += 4;
+
+#if RPL_SEC_REPLAY_PROTECTION
+  uip_ipaddr_t src_addr;
+  uip_ipaddr_copy(&src_addr, &UIP_IP_BUF->srcipaddr);
+  rpl_sec_node_t *p = rpl_find_sec_node(&src_addr);
+
+  uint16_t cc_nonce;
+  cc_nonce = random_rand();
+
+  if(p == NULL){		/* No incoming counter, start challenge/response */
+	  rpl_icmp6_update_nbr_table(&UIP_IP_BUF->srcipaddr,
+	                             NBR_TABLE_REASON_RPL_REPLAY_PROTECTION, NULL);
+	  p = rpl_add_sec_node(&src_addr, cc_nonce);
+	  if(p == NULL){
+		  PRINTF("RPL: Secure nodes table full, can't add a new neighbor\n");
+		  goto discard;
+	  } else {
+		  PRINTF("RPL: Start Challenge/Response with ");
+		  PRINT6ADDR(&src_addr);
+		  PRINTF(" with nonce: %u \n", cc_nonce);
+		  cc_output(&src_addr, RPL_CC_REQUEST, cc_nonce, p->sec_counter);
+		  return;
+	  }
+  } else{
+	  if(p->counter_trusted == RPL_SEC_COUNTER_TRUSTED){
+		  /* Watermark!=0 and Incoming counter==0 -> Possible node reboot */
+		  if((p->sec_counter != 0) && (counter == 0)){
+			 PRINTF("RPL: Node reboot, sending CC response with counter %lu\n", p->sec_counter);
+			 cc_output(&src_addr, RPL_CC_RESPONSE, 0, p->sec_counter);
+			 return;
+		  } else {
+			  if(p->sec_counter >= counter){
+				  PRINTF("RPL: Possible Replay Attack, discard\n");
+				  goto discard;
+			  } else {
+				  p->sec_counter = counter;
+			  }
+		  }
+	  } else {
+		 PRINTF("RPL: Node not trusted yet, restart CC Challenge/Response\n");
+		 p->lifetime_nonce = cc_nonce;
+		 cc_output(&src_addr, RPL_CC_REQUEST, cc_nonce, p->sec_counter);
+		 return;
+	  }
+  }
+#endif
 
   if(lvl == 0 || lvl == 1) {
     mic_len = 4;
@@ -1615,19 +1655,19 @@ dao_input(void)
   UIP_ICMP_BUF->icmpchksum = 0;
 
   for(i = 0; i < 8; i++) {
-    nonce[i] = (UIP_IP_BUF->srcipaddr).u8[(8 + i)];
+    ccm_nonce[i] = (UIP_IP_BUF->srcipaddr).u8[(8 + i)];
   }
-  set32(nonce, 8, counter);
-  nonce[12] = lvl;
+  set32(ccm_nonce, 8, counter);
+  ccm_nonce[12] = lvl;
 
   CCM_STAR.set_key(rpl_key);
 
   if(lvl == 1 || lvl == 3) {  /* RPL_SEC_LVL odd, MAC-mode */
-    CCM_STAR.aead(nonce, buffer + sec_len, buffer_length,
+    CCM_STAR.aead(ccm_nonce, buffer + sec_len, buffer_length,
                   uip_buf + UIP_LLH_LEN, UIP_IPICMPH_LEN + sec_len,
                   mic, mic_len, RPL_DECRYPT);
   } else {      /* RPL_SEC_LVL even, MAC-mode */
-    CCM_STAR.mic(nonce, buffer + sec_len, buffer_length,
+    CCM_STAR.mic(ccm_nonce, buffer + sec_len, buffer_length,
                  uip_buf + UIP_LLH_LEN, UIP_IPICMPH_LEN + sec_len,
                  mic, mic_len);
   }
@@ -1780,7 +1820,7 @@ dao_output_target_seq(rpl_parent_t *parent, uip_ipaddr_t *prefix,
 
 #if RPL_SECURITY
   int sec_len;
-  uint8_t nonce[RPL_NONCE_LENGTH];
+  uint8_t ccm_nonce[RPL_NONCE_LENGTH];
   uint8_t mic_len;      /* n-byte MAC length */
   int i;
 #endif
@@ -1916,11 +1956,10 @@ dao_output_target_seq(rpl_parent_t *parent, uip_ipaddr_t *prefix,
     UIP_ICMP_BUF->icmpchksum = 0;
 
     for(i = 0; i < 8; i++) {
-      nonce[i] = (UIP_IP_BUF->srcipaddr).u8[(8 + i)];
+    	ccm_nonce[i] = (UIP_IP_BUF->srcipaddr).u8[(8 + i)];
     }
-
-    set32(nonce, 8, rpl_sec_counter);
-    nonce[12] = RPL_SEC_LVL;
+    set32(ccm_nonce, 8, rpl_sec_counter);
+    ccm_nonce[12] = RPL_SEC_LVL;
 
 #if RPL_SEC_REPLAY_PROTECTION
     if(rpl_sec_counter_inc) {
@@ -1938,7 +1977,7 @@ dao_output_target_seq(rpl_parent_t *parent, uip_ipaddr_t *prefix,
       } else {
         mic_len = 8;
       }
-      CCM_STAR.aead(nonce,
+      CCM_STAR.aead(ccm_nonce,
                     buffer + sec_len, pos - sec_len,
                     uip_buf + UIP_LLH_LEN, UIP_IPICMPH_LEN + sec_len,
                     buffer + pos, mic_len, RPL_ENCRYPT);
@@ -1948,7 +1987,7 @@ dao_output_target_seq(rpl_parent_t *parent, uip_ipaddr_t *prefix,
       } else {
         mic_len = 8;
       }
-      CCM_STAR.mic(nonce,
+      CCM_STAR.mic(ccm_nonce,
                    buffer + sec_len, pos - sec_len,
                    uip_buf + UIP_LLH_LEN, UIP_IPICMPH_LEN + sec_len,
                    buffer + pos, mic_len);
@@ -1986,12 +2025,11 @@ dao_ack_input(void)
   uint8_t timestamp;
   uint8_t kim;
   uint8_t lvl;
-  uint8_t flags;
   uint32_t counter;
 
   uint8_t key_index;
 
-  uint8_t nonce[RPL_NONCE_LENGTH];
+  uint8_t ccm_nonce[RPL_NONCE_LENGTH];
 
   uint8_t mic[8];
   uint8_t mic_len;      /* n-byte MAC length */
@@ -2001,20 +2039,66 @@ dao_ack_input(void)
   timestamp = (buffer[pos++] & RPL_TIMESTAMP_MASK) >> RPL_TIMESTAMP_SHIFT;
   kim = (buffer[pos++] & RPL_KIM_MASK) >> RPL_KIM_SHIFT;
   lvl = (buffer[pos++] & RPL_LVL_MASK);
-  flags = buffer[pos++];
+  ++pos;
 
 /*  Discard packets with time stamp instead of simple counters,
  *  Only accept packets with pre installed key
  *  Discard unassigned security levels
- *  Flags must be zero
  */
 
-  if((timestamp == 1) || (kim != 0) || (lvl > 3) || (flags != 0)) {
+  if((timestamp == 1) || (kim != 0) || (lvl > 3)) {
     goto discard;
   }
 
   counter = get32(buffer, pos);
   pos += 4;
+
+#if RPL_SEC_REPLAY_PROTECTION
+  uip_ipaddr_t src_addr;
+  uip_ipaddr_copy(&src_addr, &UIP_IP_BUF->srcipaddr);
+  rpl_sec_node_t *p = rpl_find_sec_node(&src_addr);
+
+  uint16_t cc_nonce;
+  cc_nonce = random_rand();
+
+
+  if(p == NULL){		/* No incoming counter, start challenge/response */
+	  rpl_icmp6_update_nbr_table(&UIP_IP_BUF->srcipaddr,
+	                             NBR_TABLE_REASON_RPL_REPLAY_PROTECTION, NULL);
+	  p = rpl_add_sec_node(&src_addr, cc_nonce);
+	  if(p == NULL){
+		  PRINTF("RPL: Secure nodes table full, can't add a new neighbor\n");
+		  goto discard;
+	  } else {
+		  PRINTF("RPL: Start Challenge/Response with ");
+		  PRINT6ADDR(&src_addr);
+		  PRINTF(" with nonce: %u \n", cc_nonce);
+		  cc_output(&src_addr, RPL_CC_REQUEST, cc_nonce, p->sec_counter);
+		  return;
+	  }
+  } else{
+	  if(p->counter_trusted == RPL_SEC_COUNTER_TRUSTED){
+		  /* Watermark!=0 and Incoming counter==0 -> Possible node reboot */
+		  if((p->sec_counter != 0) && (counter == 0)){
+			 PRINTF("RPL: Node reboot, sending CC response with counter %lu\n", p->sec_counter);
+			 cc_output(&src_addr, RPL_CC_RESPONSE, 0, p->sec_counter);
+			 return;
+		  } else {
+			  if(p->sec_counter >= counter){
+				  PRINTF("RPL: Possible Replay Attack, discard\n");
+				  goto discard;
+			  } else {
+				  p->sec_counter = counter;
+			  }
+		  }
+	  } else {
+		 PRINTF("RPL: Node not trusted yet, restart CC Challenge/Response\n");
+		 p->lifetime_nonce = cc_nonce;
+		 cc_output(&src_addr, RPL_CC_REQUEST, cc_nonce, p->sec_counter);
+		 return;
+	  }
+  }
+#endif
 
   if(lvl == 0 || lvl == 1) {
     mic_len = 4;
@@ -2044,19 +2128,19 @@ dao_ack_input(void)
   UIP_ICMP_BUF->icmpchksum = 0;
 
   for(i = 0; i < 8; i++) {
-    nonce[i] = (UIP_IP_BUF->srcipaddr).u8[(8 + i)];
+    ccm_nonce[i] = (UIP_IP_BUF->srcipaddr).u8[(8 + i)];
   }
-  set32(nonce, 8, counter);
-  nonce[12] = lvl;
+  set32(ccm_nonce, 8, counter);
+  ccm_nonce[12] = lvl;
 
   CCM_STAR.set_key(rpl_key);
 
   if(lvl == 1 || lvl == 3) {  /* RPL_SEC_LVL odd, MAC-mode */
-    CCM_STAR.aead(nonce, buffer + sec_len, buffer_length,
+    CCM_STAR.aead(ccm_nonce, buffer + sec_len, buffer_length,
                   uip_buf + UIP_LLH_LEN, UIP_IPICMPH_LEN + sec_len,
                   mic, mic_len, RPL_DECRYPT);
   } else {      /* RPL_SEC_LVL even, MAC-mode */
-    CCM_STAR.mic(nonce, buffer + sec_len, buffer_length,
+    CCM_STAR.mic(ccm_nonce, buffer + sec_len, buffer_length,
                  uip_buf + UIP_LLH_LEN, UIP_IPICMPH_LEN + sec_len,
                  mic, mic_len);
   }

@@ -55,10 +55,6 @@
 #include "lib/memb.h"
 #include "sys/ctimer.h"
 
-#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
-#include "net/packetbuf.h"
-#endif
-
 #include <limits.h>
 #include <string.h>
 
@@ -731,7 +727,7 @@ rpl_add_sec_node(uip_ipaddr_t *addr, uint16_t nonce)
 {
 	rpl_sec_node_t *p = NULL;
 
-	const uip_lladdr_t *lladdr = (uip_lladdr_t *)packetbuf_addr(PACKETBUF_ADDR_SENDER);
+	const uip_lladdr_t *lladdr = uip_ds6_nbr_lladdr_from_ipaddr(addr);
 
 	PRINTF("RPL: rpl_sec_node lladdr ");
 	PRINTLLADDR(lladdr);
