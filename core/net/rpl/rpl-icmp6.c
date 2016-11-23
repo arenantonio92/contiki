@@ -56,13 +56,11 @@
 #include "net/packetbuf.h"
 #include "net/ipv6/multicast/uip-mcast6.h"
 
+#include "random.h"
 /* Security Libraries for CCM with CBC-MAC */
 #if RPL_SECURITY
 #include "lib/ccm-star.h"
 #include "lib/aes-128.h"
-#if RPL_SEC_REPLAY_PROTECTION
-#include "random.h"
-#endif
 #endif
 
 #include <limits.h>
