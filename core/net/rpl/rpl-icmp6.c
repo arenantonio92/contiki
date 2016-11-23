@@ -55,12 +55,14 @@
 #include "net/rpl/rpl-ns.h"
 #include "net/packetbuf.h"
 #include "net/ipv6/multicast/uip-mcast6.h"
-#include "random.h"
 
 /* Security Libraries for CCM with CBC-MAC */
 #if RPL_SECURITY
 #include "lib/ccm-star.h"
 #include "lib/aes-128.h"
+#if RPL_SEC_REPLAY_PROTECTION
+#include "random.h"
+#endif
 #endif
 
 #include <limits.h>
@@ -332,7 +334,7 @@ dis_input(void)
  * Anyway, if the node is trusted, we defend this node from replay attacks.
  */
   /*
-  if(p == NULL){		/* No incoming counter, start challenge/response /
+  if(p == NULL){		/ No incoming counter, start challenge/response /
       rpl_icmp6_update_nbr_table(&UIP_IP_BUF->srcipaddr,
                                  NBR_TABLE_REASON_RPL_REPLAY_PROTECTION, NULL);
 	  uint16_t nonce;
@@ -1082,6 +1084,7 @@ dio_output(rpl_instance_t *instance, uip_ipaddr_t *uc_addr)
          (unsigned)dag->rank);
   PRINT6ADDR(uc_addr);
   PRINTF("\n");
+  //uip_icmp6_send(uc_addr, ICMP6_RPL, RPL_CODE_DIO, pos);    /* !! */
   uip_ip6addr_copy(&addr, uc_addr);
 #else /* RPL_LEAF_ONLY */
   /* Unicast requests get unicast replies! */
@@ -1089,12 +1092,14 @@ dio_output(rpl_instance_t *instance, uip_ipaddr_t *uc_addr)
     PRINTF("RPL: Sending a multicast-DIO with rank %u\n",
            (unsigned)instance->current_dag->rank);
     uip_create_linklocal_rplnodes_mcast(&addr);
+    //uip_icmp6_send(&addr, ICMP6_RPL, RPL_CODE_DIO, pos);	/* !! */
   } else {
     PRINTF("RPL: Sending unicast-DIO with rank %u to ",
            (unsigned)instance->current_dag->rank);
     PRINT6ADDR(uc_addr);
     PRINTF("\n");
     uip_ip6addr_copy(&addr, uc_addr);
+    //uip_icmp6_send(uc_addr, ICMP6_RPL, RPL_CODE_DIO, pos); /* !! */
   }
 #endif /* RPL_LEAF_ONLY */
 
@@ -1327,6 +1332,11 @@ dao_input_storing(void)
         PRINT6ADDR(rpl_get_parent_ipaddr(dag->preferred_parent));
         PRINTF("\n");
 
+		//buffer = UIP_ICMP_PAYLOAD;
+        //buffer[3] = out_seq; /* add an outgoing seq no before fwd */
+        //uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
+        //               ICMP6_RPL, RPL_CODE_DAO, buffer_length);
+            /* !! */
         dao_output_target_seq(dag->preferred_parent, &prefix, lifetime, out_seq);
       }
     }
@@ -1412,6 +1422,11 @@ fwd_dao:
       PRINT6ADDR(rpl_get_parent_ipaddr(dag->preferred_parent));
       PRINTF(" in seq: %d out seq: %d\n", sequence, out_seq);
 
+	  //buffer = UIP_ICMP_PAYLOAD;
+     // buffer[3] = out_seq; /* add an outgoing seq no before fwd */
+      //uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
+       //              ICMP6_RPL, RPL_CODE_DAO, buffer_length);
+      //               /* !! */
       dao_output_target_seq(dag->preferred_parent, &prefix, lifetime, out_seq);
     }
     if(should_ack) {
@@ -1555,7 +1570,7 @@ dao_input(void)
 
   uint8_t key_index;
 
-  uint8_t nonce[RPL_NONCE_LENGTH];
+  uint8_t ccm_nonce[RPL_NONCE_LENGTH];
 
   uint8_t mic[8];
   uint8_t mic_len;      /* n-byte MAC length */
@@ -2229,14 +2244,17 @@ dao_ack_input(void)
       PRINTF("RPL: No route entry found to forward DAO ACK (seqno %u)\n", sequence);
     }
   }
-#endif /* RPL_WITH_DAO_ACK */
 
   uip_clear_buf();
+
 
 #if RPL_SECURITY
 discard:
   uip_clear_buf();
 #endif
+#endif /* RPL_WITH_DAO_ACK */
+
+  uip_clear_buf();
 }
 /*---------------------------------------------------------------------------*/
 void
