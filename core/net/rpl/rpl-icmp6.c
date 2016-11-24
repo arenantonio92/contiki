@@ -66,7 +66,7 @@
 #include <limits.h>
 #include <string.h>
 
-#define DEBUG DEBUG_PRINT
+#define DEBUG DEBUG_NONE
 
 #include "net/ip/uip-debug.h"
 
@@ -2487,6 +2487,23 @@ cc_input(void)
 
       incoming_counter = get32(buffer, pos);
       pos += 4;
+
+      /* Check if there are any CC suboptions (PAD1 or PADN) */
+        for(; i < buffer_length; i += len) {
+          subopt_type = buffer[i];
+          if(subopt_type == RPL_OPTION_PAD1) {
+            len = 1;
+          } else {
+            /* Suboption with a two-byte header + payload */
+            len = 2 + buffer[i + 1];
+          }
+
+          if(len + i > (buffer_length + sec_len)) {
+            PRINTF("RPL: Invalid CC packet\n");
+            RPL_STAT(rpl_stats.malformed_msgs++);
+            goto discard;
+          }
+        }
 
       PRINTF("RPL: CC reiceved message type = %u, with nonce = %u, inc_counter = %lu\n",
     		  type, nonce, incoming_counter);

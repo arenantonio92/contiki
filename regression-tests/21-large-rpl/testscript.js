@@ -68,7 +68,7 @@ new java.lang.Thread(new java.lang.Runnable(tunRunnable)).start();
 var completed = {};
 while(Object.keys(completed).length < NR_FEATHERS) {
     if (!msg.startsWith("#L") && !msg.startsWith("E")) {
-        log.log(mote + ": " + msg + "\n");
+        //log.log(mote + ": " + msg + "\n");
     }
     if (id != 1 && msg.startsWith("HTTP socket closed")) {
         completed[id] = id;
