@@ -3,6 +3,7 @@ TIMEOUT(3000000); /* 50 minutes */
 
 var NR_FEATHERS = mote.getSimulation().getMotesCount() - 1;
 
+
 /* conf */
 var travis = java.lang.System.getenv().get("TRAVIS");
 if (travis == null) {
@@ -20,6 +21,7 @@ if (travis == null) {
 /* delay */
 GENERATE_MSG(1000, "continue");
 YIELD_THEN_WAIT_UNTIL(msg.equals("continue"));
+
 
 /* realtime speed */
 sim.setSpeedLimit(2.0);
@@ -66,7 +68,7 @@ new java.lang.Thread(new java.lang.Runnable(tunRunnable)).start();
 var completed = {};
 while(Object.keys(completed).length < NR_FEATHERS) {
     if (!msg.startsWith("#L") && !msg.startsWith("E")) {
-        //log.log(mote + ": " + msg + "\n");
+        log.log(mote + ": " + msg + "\n");
     }
     if (id != 1 && msg.startsWith("HTTP socket closed")) {
         completed[id] = id;

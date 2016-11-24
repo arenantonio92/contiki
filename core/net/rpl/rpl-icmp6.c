@@ -66,7 +66,7 @@
 #include <limits.h>
 #include <string.h>
 
-#define DEBUG DEBUG_NONE
+#define DEBUG DEBUG_PRINT
 
 #include "net/ip/uip-debug.h"
 
@@ -1083,7 +1083,7 @@ dio_output(rpl_instance_t *instance, uip_ipaddr_t *uc_addr)
   PRINT6ADDR(uc_addr);
   PRINTF("\n");
   //uip_icmp6_send(uc_addr, ICMP6_RPL, RPL_CODE_DIO, pos);    /* !! */
-  uip_ip6addr_copy(&addr, uc_addr);
+  uip_ipaddr_copy(&addr, uc_addr);
 #else /* RPL_LEAF_ONLY */
   /* Unicast requests get unicast replies! */
   if(uc_addr == NULL) {
@@ -1096,7 +1096,7 @@ dio_output(rpl_instance_t *instance, uip_ipaddr_t *uc_addr)
            (unsigned)instance->current_dag->rank);
     PRINT6ADDR(uc_addr);
     PRINTF("\n");
-    uip_ip6addr_copy(&addr, uc_addr);
+    uip_ipaddr_copy(&addr, uc_addr);
     //uip_icmp6_send(uc_addr, ICMP6_RPL, RPL_CODE_DIO, pos); /* !! */
   }
 #endif /* RPL_LEAF_ONLY */
@@ -1330,12 +1330,12 @@ dao_input_storing(void)
         PRINT6ADDR(rpl_get_parent_ipaddr(dag->preferred_parent));
         PRINTF("\n");
 
-		//buffer = UIP_ICMP_PAYLOAD;
-        //buffer[3] = out_seq; /* add an outgoing seq no before fwd */
-        //uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
-        //               ICMP6_RPL, RPL_CODE_DAO, buffer_length);
+		buffer = UIP_ICMP_PAYLOAD;
+        buffer[3] = out_seq; /* add an outgoing seq no before fwd */
+        uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
+                       ICMP6_RPL, RPL_CODE_DAO, buffer_length);
             /* !! */
-        dao_output_target_seq(dag->preferred_parent, &prefix, lifetime, out_seq);
+      //  dao_output_target_seq(dag->preferred_parent, &prefix, lifetime, out_seq);
       }
     }
     /* independent if we remove or not - ACK the request */
@@ -1420,12 +1420,12 @@ fwd_dao:
       PRINT6ADDR(rpl_get_parent_ipaddr(dag->preferred_parent));
       PRINTF(" in seq: %d out seq: %d\n", sequence, out_seq);
 
-	  //buffer = UIP_ICMP_PAYLOAD;
-     // buffer[3] = out_seq; /* add an outgoing seq no before fwd */
-      //uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
-       //              ICMP6_RPL, RPL_CODE_DAO, buffer_length);
-      //               /* !! */
-      dao_output_target_seq(dag->preferred_parent, &prefix, lifetime, out_seq);
+	  buffer = UIP_ICMP_PAYLOAD;
+      buffer[3] = out_seq; /* add an outgoing seq no before fwd */
+      uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
+                    ICMP6_RPL, RPL_CODE_DAO, buffer_length);
+                     /* !! */
+      //dao_output_target_seq(dag->preferred_parent, &prefix, lifetime, out_seq);
     }
     if(should_ack) {
       PRINTF("RPL: Sending DAO ACK\n");
@@ -2229,9 +2229,9 @@ dao_ack_input(void)
         PRINTF("RPL: Fwd DAO ACK to:");
         PRINT6ADDR(nexthop);
         PRINTF("\n");
-        //buffer[2] = re->state.dao_seqno_in;
-        //uip_icmp6_send(nexthop, ICMP6_RPL, RPL_CODE_DAO_ACK, 4);
-        dao_ack_output(instance, nexthop, re->state.dao_seqno_in, status);
+        buffer[2] = re->state.dao_seqno_in;
+        uip_icmp6_send(nexthop, ICMP6_RPL, RPL_CODE_DAO_ACK, 4);
+        //dao_ack_output(instance, nexthop, re->state.dao_seqno_in, status);
       }
 
       if(status >= RPL_DAO_ACK_UNABLE_TO_ACCEPT) {
@@ -2242,9 +2242,6 @@ dao_ack_input(void)
       PRINTF("RPL: No route entry found to forward DAO ACK (seqno %u)\n", sequence);
     }
   }
-
-  uip_clear_buf();
-
 
 #if RPL_SECURITY
 discard:
@@ -2396,7 +2393,7 @@ cc_input(void)
     PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
     PRINTF("\n");
 
-    uip_ip6addr_copy(&from, &UIP_IP_BUF->srcipaddr);
+    uip_ipaddr_copy(&from, &UIP_IP_BUF->srcipaddr);
 
     buffer = UIP_ICMP_PAYLOAD;
 
@@ -2654,12 +2651,6 @@ rpl_icmp6_register_handlers()
   rpl_last_dis.responded = RPL_DIS_RESPONDED;
 #if RPL_SEC_REPLAY_PROTECTION
   uip_icmp6_register_input_handler(&cc_handler);
-  /* Random init with least significant 16 bit of local link address,
-   * it should be a different seed for every node.
-   */
-  uip_ds6_addr_t *ds6_addr = uip_ds6_get_link_local(ADDR_PREFERRED);
-  uip_ipaddr_t *addr = &ds6_addr->ipaddr;
-  random_init(addr->u16[7]);
 #endif /* RPL_SEC_REPLAY_PROTECTION */
 #endif /* RPL_SECURITY */
 }
