@@ -1594,8 +1594,9 @@ dao_input(void)
   uint8_t *buffer;
   rpl_instance_t *instance;
   uint8_t instance_id;
-#if RPL_SECURITY
   int sec_len;
+
+#if RPL_SECURITY
   uint8_t mic_len;      /* n-byte MAC length */
   rpl_sec_section_t p;
 #endif
@@ -1606,6 +1607,7 @@ dao_input(void)
   PRINTF("\n");
 
   buffer = UIP_ICMP_PAYLOAD;
+  sec_len = 0;
 
 #if RPL_SECURITY
   int pos;
