@@ -66,7 +66,7 @@
 #include <limits.h>
 #include <string.h>
 
-#define DEBUG DEBUG_NONE
+#define DEBUG DEBUG_PRINT
 
 #include "net/ip/uip-debug.h"
 
@@ -196,7 +196,55 @@ prepare_for_dao_fwd(uint8_t sequence, uip_ds6_route_t *rep)
   return dao_sequence;
 }
 #endif /* RPL_WITH_STORING */
+/*---------------------------------------------------------------------------*/
+static int
+get_global_addr(uip_ipaddr_t *addr)
+{
+  int i;
+  int state;
 
+  for(i = 0; i < UIP_DS6_ADDR_NB; i++) {
+    state = uip_ds6_if.addr_list[i].state;
+    if(uip_ds6_if.addr_list[i].isused &&
+       (state == ADDR_TENTATIVE || state == ADDR_PREFERRED)) {
+      if(!uip_is_addr_linklocal(&uip_ds6_if.addr_list[i].ipaddr)) {
+        memcpy(addr, &uip_ds6_if.addr_list[i].ipaddr, sizeof(uip_ipaddr_t));
+        return 1;
+      }
+    }
+  }
+  return 0;
+}
+/*---------------------------------------------------------------------------*/
+static uint32_t
+get32(uint8_t *buffer, int pos)
+{
+  return (uint32_t)buffer[pos] << 24 | (uint32_t)buffer[pos + 1] << 16 |
+         (uint32_t)buffer[pos + 2] << 8 | buffer[pos + 3];
+}
+/*---------------------------------------------------------------------------*/
+static void
+set32(uint8_t *buffer, int pos, uint32_t value)
+{
+  buffer[pos++] = value >> 24;
+  buffer[pos++] = (value >> 16) & 0xff;
+  buffer[pos++] = (value >> 8) & 0xff;
+  buffer[pos++] = value & 0xff;
+}
+/*---------------------------------------------------------------------------*/
+static uint16_t
+get16(uint8_t *buffer, int pos)
+{
+  return (uint16_t)buffer[pos] << 8 | buffer[pos + 1];
+}
+/*---------------------------------------------------------------------------*/
+static void
+set16(uint8_t *buffer, int pos, uint16_t value)
+{
+  buffer[pos++] = value >> 8;
+  buffer[pos++] = value & 0xff;
+}
+/*---------------------------------------------------------------------------*/
 #if RPL_SECURITY
 /* Add Security Section to ICMP_PAYLOAD with given security parameter */
 static uint8_t
@@ -288,7 +336,7 @@ set_ccm_nonce(uint8_t *ccm_nonce, uint32_t counter, uint8_t sec_lvl)
 	 *     +-+-+-+-+-+-+-+-+
 	 *
 	 */
-
+  int i;
   for(i = 0; i < 8; i++) {
 	  ccm_nonce[i] = (UIP_IP_BUF->srcipaddr).u8[(8 + i)];
   }
@@ -344,7 +392,7 @@ sec_aead(uint8_t *ccm_nonce, int buffer_len, int sec_len,
 	  return mic_len;
   } else {
 	  if(forward == RPL_DECRYPT){
-		  if(lvl == 1 || lvl == 3) {
+		  if(sec_lvl == 1 || sec_lvl == 3) {
 			  CCM_STAR.aead(ccm_nonce,
 					  	  	buffer + sec_len, buffer_len,
 		                    uip_buf + UIP_LLH_LEN, UIP_IPICMPH_LEN + sec_len,
@@ -368,54 +416,6 @@ sec_aead(uint8_t *ccm_nonce, int buffer_len, int sec_len,
 }
 
 #endif /* RPL_SECURITY */
-/*---------------------------------------------------------------------------*/
-static int
-get_global_addr(uip_ipaddr_t *addr)
-{
-  int i;
-  int state;
-
-  for(i = 0; i < UIP_DS6_ADDR_NB; i++) {
-    state = uip_ds6_if.addr_list[i].state;
-    if(uip_ds6_if.addr_list[i].isused &&
-       (state == ADDR_TENTATIVE || state == ADDR_PREFERRED)) {
-      if(!uip_is_addr_linklocal(&uip_ds6_if.addr_list[i].ipaddr)) {
-        memcpy(addr, &uip_ds6_if.addr_list[i].ipaddr, sizeof(uip_ipaddr_t));
-        return 1;
-      }
-    }
-  }
-  return 0;
-}
-/*---------------------------------------------------------------------------*/
-static uint32_t
-get32(uint8_t *buffer, int pos)
-{
-  return (uint32_t)buffer[pos] << 24 | (uint32_t)buffer[pos + 1] << 16 |
-         (uint32_t)buffer[pos + 2] << 8 | buffer[pos + 3];
-}
-/*---------------------------------------------------------------------------*/
-static void
-set32(uint8_t *buffer, int pos, uint32_t value)
-{
-  buffer[pos++] = value >> 24;
-  buffer[pos++] = (value >> 16) & 0xff;
-  buffer[pos++] = (value >> 8) & 0xff;
-  buffer[pos++] = value & 0xff;
-}
-/*---------------------------------------------------------------------------*/
-static uint16_t
-get16(uint8_t *buffer, int pos)
-{
-  return (uint16_t)buffer[pos] << 8 | buffer[pos + 1];
-}
-/*---------------------------------------------------------------------------*/
-static void
-set16(uint8_t *buffer, int pos, uint16_t value)
-{
-  buffer[pos++] = value >> 8;
-  buffer[pos++] = value & 0xff;
-}
 /*---------------------------------------------------------------------------*/
 uip_ds6_nbr_t *
 rpl_icmp6_update_nbr_table(uip_ipaddr_t *from, nbr_table_reason_t reason, void *data)
@@ -472,8 +472,6 @@ dis_input(void)
   uint8_t ccm_nonce[RPL_NONCE_LENGTH];
 
   uint8_t mic_len;      /* n-byte MAC length */
-
-  int i;
 
   buffer = UIP_ICMP_PAYLOAD;
 
@@ -557,7 +555,7 @@ dis_input(void)
 
   set_ccm_nonce(ccm_nonce, counter, lvl);
 
-  if(sec_aead(ccm_nonce, buffer_len, sec_len, lvl, RPL_DECRYPT) == 0){
+  if(sec_aead(ccm_nonce, buffer_length, sec_len, lvl, RPL_DECRYPT) == 0){
       PRINTF("RPL: MIC mismatch\n");
 	  goto discard;
   }
@@ -567,7 +565,8 @@ dis_input(void)
   rpl_last_dis.timestamp = timestamp;
   rpl_last_dis.kim = kim;
   rpl_last_dis.lvl = lvl;
-  rpl_last_dis.key_source = 0;
+  rpl_last_dis.key_source[0] = 0;
+  rpl_last_dis.key_source[1] = 0;
   rpl_last_dis.key_index = key_index;
 #endif
 
@@ -615,7 +614,6 @@ dis_output(uip_ipaddr_t *addr)
   int sec_len;
   uint8_t ccm_nonce[RPL_NONCE_LENGTH];
   uint8_t mic_len;      /* n-byte MAC length */
-  int i;
 #endif
 
   pos = 0;
@@ -1008,7 +1006,7 @@ dio_output(rpl_instance_t *instance, uip_ipaddr_t *uc_addr)
     sec_lvl = rpl_last_dis.lvl;
   }
 
-  pos+= sec_len;
+  pos += sec_len;
 #endif
 
   buffer[pos++] = instance->instance_id;
@@ -1142,7 +1140,7 @@ dio_output(rpl_instance_t *instance, uip_ipaddr_t *uc_addr)
 #endif /* RPL_LEAF_ONLY */
 
 #if RPL_SECURITY
-  set_ip_icmp_fields(&addr, RPL_CODE_SEC_DIS);
+  set_ip_icmp_fields(&addr, RPL_CODE_SEC_DIO);
 
   set_ccm_nonce(ccm_nonce, rpl_sec_counter, sec_lvl);
 
@@ -1528,7 +1526,7 @@ dao_input_nonstoring(int sec_len)
   }
 
   /* Check if there are any RPL options present. */
-  for(pos; pos < buffer_length; pos += len) {
+  for(; pos < buffer_length; pos += len) {
     subopt_type = buffer[pos];
     if(subopt_type == RPL_OPTION_PAD1) {
       len = 1;
@@ -1598,7 +1596,7 @@ dao_input(void)
 
 #if RPL_SECURITY
   uint8_t mic_len;      /* n-byte MAC length */
-  rpl_sec_section_t p;
+  rpl_sec_section_t sec_section;
 #endif
 
   /* Destination Advertisement Object */
@@ -1707,11 +1705,12 @@ dao_input(void)
 	  goto discard;
   }
 
-  p->timestamp = timestamp;
-  p->kim = kim;
-  p->lvl = lvl;
-  p->key_source = 0;	/* TODO: not implemented */
-  p->key_index = key_index;
+  sec_section.timestamp = timestamp;
+  sec_section.kim = kim;
+  sec_section.lvl = lvl;
+  sec_section.key_source[0] = 0;	/* TODO: not implemented */
+  sec_section.key_source[1] = 0;
+  sec_section.key_index = key_index;
 #endif /* RPL_SECURITY */
 
   instance_id = buffer[sec_len];
@@ -1724,7 +1723,7 @@ dao_input(void)
 
   if(RPL_IS_STORING(instance)) {
 #if RPL_SECURITY
-	dao_input_storing(sec_len, mic_len, &p);
+	dao_input_storing(sec_len, mic_len, &sec_section);
 #else
     dao_input_storing(0, 0, NULL);
 #endif
@@ -1856,7 +1855,6 @@ dao_output_target_seq(rpl_parent_t *parent, uip_ipaddr_t *prefix,
   int sec_len;
   uint8_t ccm_nonce[RPL_NONCE_LENGTH];
   uint8_t mic_len;      /* n-byte MAC length */
-  int i;
 #endif   /* RPL_SECURITY */
 
   /* Destination Advertisement Object */
@@ -2281,6 +2279,8 @@ cc_input(void)
   uint8_t buffer_length;
   int pos;
   int sec_len;
+  int len;
+  uint8_t subopt_type;
   uint8_t ccm_nonce[RPL_NONCE_LENGTH];
   uint8_t mic_len;      /* n-byte MAC length */
 
@@ -2296,11 +2296,9 @@ cc_input(void)
   uint8_t timestamp;
   uint8_t kim;
   uint8_t lvl;
-  uint8_t flags;
   uint32_t counter;
 
   uint8_t key_index;
-  uint8_t mic[8];
 
   PRINTF("RPL: Received a CC from ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
@@ -2323,7 +2321,7 @@ cc_input(void)
    *  Flags must be zero
    */
 
-  if((timestamp == 1) || (kim != 0) || (lvl > 3) || (flags != 0)) {
+  if((timestamp == 1) || (kim != 0) || (lvl > 3)) {
 	  goto discard;
   }
 
@@ -2382,7 +2380,7 @@ cc_input(void)
 		  len = 2 + buffer[pos + 1];
 	  }
 
-	  if(len + i - sec_len > buffer_length) {
+	  if(len + pos - sec_len > buffer_length) {
 		  PRINTF("RPL: Invalid CC packet\n");
 		  RPL_STAT(rpl_stats.malformed_msgs++);
 		  goto discard;
@@ -2434,7 +2432,6 @@ cc_output(uip_ipaddr_t *addr, uint8_t type, uint16_t nonce, uint32_t inc_counter
   int sec_len;
   uint8_t ccm_nonce[RPL_NONCE_LENGTH];
   uint8_t mic_len;      /* n-byte MAC length */
-  int i;
 
   PRINTF("RPL: CC Message to: ");
   PRINT6ADDR(addr);

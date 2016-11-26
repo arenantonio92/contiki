@@ -179,7 +179,7 @@ struct rpl_sec_section {
   uint8_t timestamp;
   uint8_t kim;
   uint8_t lvl;
-  uint64_t key_source;
+  uint32_t key_source[2];
   uint8_t key_index;
 };
 typedef struct rpl_sec_section rpl_sec_section_t;
