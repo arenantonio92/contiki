@@ -348,7 +348,7 @@
 #ifdef RPL_CONF_SECURITY
 #define RPL_SECURITY          RPL_CONF_SECURITY
 #else /* Not enabled by user, disable security */
-#define RPL_SECURITY          0
+#define RPL_SECURITY          1
 #endif
 
 /*
