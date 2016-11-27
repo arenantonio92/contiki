@@ -389,9 +389,36 @@ sec_aead(uint8_t *ccm_nonce, int buffer_len, int sec_len,
 	  	               uip_buf + UIP_LLH_LEN, UIP_IPICMPH_LEN + sec_len,
 	  	               buffer + sec_len + buffer_len, mic_len);
 	  }
+	  /*int i;
+	  PRINTF("IP: IP+ICMP header: ");
+	  for(i=UIP_LLH_LEN;i<UIP_LLH_LEN + UIP_IPICMPH_LEN; i++)
+		  printf("%x", uip_buf[i]);
+	  PRINTF("\nIP: SEC Section: ");
+	  for(;i<UIP_LLH_LEN + UIP_IPICMPH_LEN + sec_len;i++)
+	  		  printf("%x", uip_buf[i]);
+	  PRINTF("\nIP: RPL PAYLOAD: %d: ", buffer_len);
+	  for(;i<UIP_LLH_LEN + UIP_IPICMPH_LEN + sec_len + buffer_len;i++)
+	  		  printf("%x", uip_buf[i]);
+	  PRINTF("\nIP: MIC: ");
+	  for(;i<UIP_LLH_LEN + UIP_IPICMPH_LEN + sec_len + buffer_len + mic_len;i++)
+	  		  printf("%x", uip_buf[i]);
+	  PRINTF("\n");*/
 	  return mic_len;
   } else {
 	  if(forward == RPL_DECRYPT){
+		  /*int i;
+		  PRINTF("IP: IP+ICMP header: ");
+		  for(i=UIP_LLH_LEN;i<UIP_LLH_LEN + UIP_IPICMPH_LEN; i++)
+			  printf("%x", uip_buf[i]);
+		  PRINTF("\nIP: SEC Section len %d: ", sec_len);
+		  for(;i<UIP_LLH_LEN + UIP_IPICMPH_LEN + sec_len;i++)
+		  		  printf("%x", uip_buf[i]);
+		  PRINTF("\nIP: RPL PAYLOAD %d: ", buffer_len);
+		  for(;i<UIP_LLH_LEN + UIP_IPICMPH_LEN + sec_len + buffer_len;i++)
+		  		  printf("%x", uip_buf[i]);
+		  PRINTF("\nIP: MIC received: ");
+		  for(;i<UIP_LLH_LEN + UIP_IPICMPH_LEN + sec_len + buffer_len + mic_len;i++)
+		  		  printf("%x", uip_buf[i]);*/
 		  if(sec_lvl == 1 || sec_lvl == 3) {
 			  CCM_STAR.aead(ccm_nonce,
 					  	  	buffer + sec_len, buffer_len,
@@ -403,7 +430,10 @@ sec_aead(uint8_t *ccm_nonce, int buffer_len, int sec_len,
 		                   uip_buf + UIP_LLH_LEN, UIP_IPICMPH_LEN + sec_len,
 		                   mic, mic_len);
 		  }
-
+		  /*PRINTF("\n MIC computed: ");
+		  for(i=0;i<mic_len;i++)
+		  		  printf("%x", mic[i]);
+		  PRINTF("\n");*/
 		  if(memcmp(mic, buffer + sec_len + buffer_len, mic_len) != 0) {
 		      return 0;
 		  } else {
@@ -1478,7 +1508,7 @@ fwd_dao:
 }
 /*---------------------------------------------------------------------------*/
 static void
-dao_input_nonstoring(int sec_len)
+dao_input_nonstoring(int sec_len, uint8_t mic_len)
 {
 #if RPL_WITH_NON_STORING
   uip_ipaddr_t dao_sender_addr;
@@ -1503,7 +1533,7 @@ dao_input_nonstoring(int sec_len)
   memset(&dao_parent_addr, 0, 16);
 
   buffer = UIP_ICMP_PAYLOAD;
-  buffer_length = uip_len - uip_l3_icmp_hdr_len - sec_len;
+  buffer_length = uip_len - uip_l3_icmp_hdr_len - sec_len - mic_len;
 
   pos = sec_len;
   instance_id = buffer[pos++];
@@ -1622,6 +1652,9 @@ dao_input(void)
 
   pos = 0;
 
+  rpl_remove_header();
+  buffer = UIP_ICMP_PAYLOAD;
+
   timestamp = (buffer[pos++] & RPL_TIMESTAMP_MASK) >> RPL_TIMESTAMP_SHIFT;
   kim = (buffer[pos++] & RPL_KIM_MASK) >> RPL_KIM_SHIFT;
   lvl = (buffer[pos++] & RPL_LVL_MASK);
@@ -1633,7 +1666,7 @@ dao_input(void)
  */
 
   if((timestamp == 1) || (kim != 0) || (lvl > 3)) {
-    goto discard;
+	  goto discard;
   }
 
   counter = get32(buffer, pos);
@@ -1729,9 +1762,9 @@ dao_input(void)
 #endif
   } else if(RPL_IS_NON_STORING(instance)) {
 #if RPL_SECURITY
-    dao_input_nonstoring(sec_len);
+    dao_input_nonstoring(sec_len, mic_len);
 #else
-    dao_input_nonstoring(0);
+    dao_input_nonstoring(0,0);
 #endif
   }
 
