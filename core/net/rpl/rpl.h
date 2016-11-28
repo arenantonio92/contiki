@@ -174,6 +174,7 @@ typedef struct rpl_dag rpl_dag_t;
 typedef struct rpl_instance rpl_instance_t;
 /*---------------------------------------------------------------------------*/
 /* Security Section for DIS reply and DAO forward (RFC 6550 10.2)*/
+#if RPL_SECURITY
 struct rpl_sec_section {
   uint8_t responded;
   uint8_t timestamp;
@@ -183,6 +184,7 @@ struct rpl_sec_section {
   uint8_t key_index;
 };
 typedef struct rpl_sec_section rpl_sec_section_t;
+#endif
 /*---------------------------------------------------------------------------*/
 /*
  * API for RPL objective functions (OF)

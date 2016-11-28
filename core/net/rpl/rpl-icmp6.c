@@ -392,16 +392,16 @@ sec_aead(uint8_t *ccm_nonce, int buffer_len, int sec_len,
 	  /*int i;
 	  PRINTF("IP: IP+ICMP header: ");
 	  for(i=UIP_LLH_LEN;i<UIP_LLH_LEN + UIP_IPICMPH_LEN; i++)
-		  printf("%x", uip_buf[i]);
+		  PRINTF("%x", uip_buf[i]);
 	  PRINTF("\nIP: SEC Section: ");
 	  for(;i<UIP_LLH_LEN + UIP_IPICMPH_LEN + sec_len;i++)
-	  		  printf("%x", uip_buf[i]);
+	  		  PRINTF("%x", uip_buf[i]);
 	  PRINTF("\nIP: RPL PAYLOAD: %d: ", buffer_len);
 	  for(;i<UIP_LLH_LEN + UIP_IPICMPH_LEN + sec_len + buffer_len;i++)
-	  		  printf("%x", uip_buf[i]);
+	  		  PRINTF("%x", uip_buf[i]);
 	  PRINTF("\nIP: MIC: ");
 	  for(;i<UIP_LLH_LEN + UIP_IPICMPH_LEN + sec_len + buffer_len + mic_len;i++)
-	  		  printf("%x", uip_buf[i]);
+	  		  PRINTF("%x", uip_buf[i]);
 	  PRINTF("\n");*/
 	  return mic_len;
   } else {
@@ -409,16 +409,16 @@ sec_aead(uint8_t *ccm_nonce, int buffer_len, int sec_len,
 		  /*int i;
 		  PRINTF("IP: IP+ICMP header: ");
 		  for(i=UIP_LLH_LEN;i<UIP_LLH_LEN + UIP_IPICMPH_LEN; i++)
-			  printf("%x", uip_buf[i]);
+			  PRINTF("%x", uip_buf[i]);
 		  PRINTF("\nIP: SEC Section len %d: ", sec_len);
 		  for(;i<UIP_LLH_LEN + UIP_IPICMPH_LEN + sec_len;i++)
-		  		  printf("%x", uip_buf[i]);
+		  		  PRINTF("%x", uip_buf[i]);
 		  PRINTF("\nIP: RPL PAYLOAD %d: ", buffer_len);
 		  for(;i<UIP_LLH_LEN + UIP_IPICMPH_LEN + sec_len + buffer_len;i++)
-		  		  printf("%x", uip_buf[i]);
+		  		  PRINTF("%x", uip_buf[i]);
 		  PRINTF("\nIP: MIC received: ");
 		  for(;i<UIP_LLH_LEN + UIP_IPICMPH_LEN + sec_len + buffer_len + mic_len;i++)
-		  		  printf("%x", uip_buf[i]);*/
+		  		  PRINTF("%x", uip_buf[i]);*/
 		  if(sec_lvl == 1 || sec_lvl == 3) {
 			  CCM_STAR.aead(ccm_nonce,
 					  	  	buffer + sec_len, buffer_len,
@@ -432,7 +432,7 @@ sec_aead(uint8_t *ccm_nonce, int buffer_len, int sec_len,
 		  }
 		  /*PRINTF("\n MIC computed: ");
 		  for(i=0;i<mic_len;i++)
-		  		  printf("%x", mic[i]);
+		  		  PRINTF("%x", mic[i]);
 		  PRINTF("\n");*/
 		  if(memcmp(mic, buffer + sec_len + buffer_len, mic_len) != 0) {
 		      return 0;
@@ -862,7 +862,7 @@ dio_input(void)
   PRINTF(", %u)\n", dio.preference);
 
   /* Check if there are any DIO suboptions. */
-  for(; pos < buffer_length; pos += len) {
+  for(; pos < buffer_length + sec_len; pos += len) {
     subopt_type = buffer[pos];
     if(subopt_type == RPL_OPTION_PAD1) {
       len = 1;
@@ -871,7 +871,7 @@ dio_input(void)
       len = 2 + buffer[pos + 1];
     }
 
-    if(len + pos - sec_len > buffer_length) {
+    if(len + pos > buffer_length + sec_len ) {
       PRINTF("RPL: Invalid DIO packet\n");
       RPL_STAT(rpl_stats.malformed_msgs++);
       goto discard;
@@ -1193,7 +1193,7 @@ dio_output(rpl_instance_t *instance, uip_ipaddr_t *uc_addr)
 }
 /*---------------------------------------------------------------------------*/
 static void
-dao_input_storing(int sec_len, uint8_t mic_len, rpl_sec_section_t *p)
+dao_input_storing(int sec_len, uint8_t mic_len, void *sec_section)
 {
 #if RPL_WITH_STORING
   uip_ipaddr_t dao_sender_addr;
@@ -1222,6 +1222,7 @@ dao_input_storing(int sec_len, uint8_t mic_len, rpl_sec_section_t *p)
 
 #if RPL_SECURITY
   uint8_t ccm_nonce[RPL_NONCE_LENGTH];
+  rpl_sec_section_t *p = (rpl_sec_section_t *)sec_section;
 #endif
 
   prefixlen = 0;
@@ -1290,7 +1291,7 @@ dao_input_storing(int sec_len, uint8_t mic_len, rpl_sec_section_t *p)
   }
 
   /* Check if there are any RPL options present. */
-  for(; pos < buffer_length; pos += len){
+  for(; pos < buffer_length + sec_len; pos += len){
     subopt_type = buffer[pos];
     if(subopt_type == RPL_OPTION_PAD1) {
       len = 1;
@@ -1361,8 +1362,7 @@ dao_input_storing(int sec_len, uint8_t mic_len, rpl_sec_section_t *p)
         uint8_t out_seq;
         out_seq = prepare_for_dao_fwd(sequence, rep);
 
-        PRINTF("RPL: Forwarding No-path DAO to parent - out_seq:%d",
-               out_seq);
+        PRINTF("RPL: Forwarding No-path DAO to parent ");
         PRINT6ADDR(rpl_get_parent_ipaddr(dag->preferred_parent));
         PRINTF("\n");
 
@@ -1556,7 +1556,7 @@ dao_input_nonstoring(int sec_len, uint8_t mic_len)
   }
 
   /* Check if there are any RPL options present. */
-  for(; pos < buffer_length; pos += len) {
+  for(; pos < buffer_length + sec_len; pos += len) {
     subopt_type = buffer[pos];
     if(subopt_type == RPL_OPTION_PAD1) {
       len = 1;
@@ -1565,7 +1565,7 @@ dao_input_nonstoring(int sec_len, uint8_t mic_len)
       len = 2 + buffer[pos + 1];
     }
 
-    if(len + pos - sec_len > buffer_length) {
+    if(len + pos > buffer_length + sec_len) {
       PRINTF("RPL: Invalid DAO packet\n");
       RPL_STAT(rpl_stats.malformed_msgs++);
       return;
@@ -1756,7 +1756,7 @@ dao_input(void)
 
   if(RPL_IS_STORING(instance)) {
 #if RPL_SECURITY
-	dao_input_storing(sec_len, mic_len, &sec_section);
+	dao_input_storing(sec_len, mic_len, (void *)&sec_section);
 #else
     dao_input_storing(0, 0, NULL);
 #endif
@@ -2404,7 +2404,7 @@ cc_input(void)
   pos += 4;
 
   /* Check if there are any CC suboptions (PAD1 or PADN) */
-  for(; pos < buffer_length; pos += len) {
+  for(; pos < buffer_length + sec_len; pos += len) {
 	  subopt_type = buffer[pos];
 	  if(subopt_type == RPL_OPTION_PAD1) {
 		  len = 1;
@@ -2413,7 +2413,7 @@ cc_input(void)
 		  len = 2 + buffer[pos + 1];
 	  }
 
-	  if(len + pos - sec_len > buffer_length) {
+	  if(len + pos > buffer_length + sec_len) {
 		  PRINTF("RPL: Invalid CC packet\n");
 		  RPL_STAT(rpl_stats.malformed_msgs++);
 		  goto discard;
