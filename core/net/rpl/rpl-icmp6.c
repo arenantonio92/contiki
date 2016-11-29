@@ -1682,7 +1682,7 @@ dao_input(void)
 
   if(p == NULL){		/* No incoming counter, start challenge/response */
 	  rpl_icmp6_update_nbr_table(&UIP_IP_BUF->srcipaddr,
-	                             NBR_TABLE_REASON_RPL_REPLAY_PROTECTION, NULL);
+	                             NBR_TABLE_REASON_RPL_REPLAY_PROTECTION, NULL);*/
 	  p = rpl_add_sec_node(&src_addr, cc_nonce);
 	  if(p == NULL){
 		  PRINTF("RPL: Secure nodes table full, can't add a new neighbor\n");
@@ -2051,7 +2051,8 @@ dao_ack_input(void)
   uint8_t ccm_nonce[RPL_NONCE_LENGTH];
   uint8_t mic_len;      /* n-byte MAC length */
 
-  int i;
+  rpl_remove_header();
+  buffer = UIP_ICMP_PAYLOAD;
 
   timestamp = (buffer[pos++] & RPL_TIMESTAMP_MASK) >> RPL_TIMESTAMP_SHIFT;
   kim = (buffer[pos++] & RPL_KIM_MASK) >> RPL_KIM_SHIFT;
@@ -2255,7 +2256,7 @@ dao_ack_output(rpl_instance_t *instance, uip_ipaddr_t *dest, uint8_t sequence,
 
 #if RPL_SECURITY
   int sec_len;
-  uint8_t nonce[RPL_NONCE_LENGTH];
+  uint8_t ccm_nonce[RPL_NONCE_LENGTH];
   uint8_t mic_len;      /* n-byte MAC length */
   int i;
 #endif /* RPL_SECURITY */
