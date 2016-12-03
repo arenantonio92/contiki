@@ -348,7 +348,7 @@
 #ifdef RPL_CONF_SECURITY
 #define RPL_SECURITY          RPL_CONF_SECURITY
 #else /* Not enabled by user, disable security */
-#define RPL_SECURITY          0
+#define RPL_SECURITY          1
 #endif
 
 /*
@@ -383,7 +383,7 @@
 #ifdef RPL_CONF_SEC_REPLAY_PROTECTION
 #define RPL_SEC_REPLAY_PROTECTION   RPL_CONF_SEC_REPLAY_PROTECTION
 #else
-#define RPL_SEC_REPLAY_PROTECTION   0
+#define RPL_SEC_REPLAY_PROTECTION   1
 #endif
 
 #endif /* RPL_CONF_H */

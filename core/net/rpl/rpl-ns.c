@@ -106,8 +106,8 @@ rpl_ns_is_node_reachable(const rpl_dag_t *dag, const uip_ipaddr_t *addr)
 #if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
   uint8_t is_path_secure = 1;
   uint8_t is_cc = (UIP_IP_BUF->proto == UIP_PROTO_ICMP6) &&
-		          (UIP_PROTO_ICMP6->type == ICMP6_RPL) &&
-				  (UIP_PROTO_ICMP6->icode == RPL_CODE_CC);
+		          (UIP_ICMP_BUF->type == ICMP6_RPL) &&
+				  (UIP_ICMP_BUF->icode == RPL_CODE_CC);
   while(node != NULL && node != root_node && max_depth > 0) {
 	  if(node->counter_trusted == RPL_SEC_COUNTER_NOT_TRUSTED){
 		  is_path_secure = 0;
