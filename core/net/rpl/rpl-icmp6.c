@@ -530,33 +530,33 @@ dis_input(void)
   uip_ipaddr_copy(&src_addr, &UIP_IP_BUF->srcipaddr);
   rpl_sec_node_t *p = rpl_find_sec_node(&src_addr);
 
+  uint16_t cc_nonce;
+  cc_nonce = random_rand();
+
 /* In DIS message, for now, we doesn't start a challenge/response.
  * Anyway, if the node is trusted, we defend this node from replay attacks.
  */
-  /*
-  if(p == NULL){		/ No incoming counter, start challenge/response /
-      rpl_icmp6_update_nbr_table(&UIP_IP_BUF->srcipaddr,
-                                 NBR_TABLE_REASON_RPL_REPLAY_PROTECTION, NULL);
-	  uint16_t nonce;
-	  nonce = random_rand();
-	  p = rpl_add_sec_node(&src_addr, nonce);
+  if(p == NULL){		/* No incoming counter, start challenge/response */
+	  rpl_icmp6_update_nbr_table(&UIP_IP_BUF->srcipaddr,
+	                             NBR_TABLE_REASON_RPL_REPLAY_PROTECTION, NULL);
+	  p = rpl_add_sec_node(&src_addr, cc_nonce);
 	  if(p == NULL){
-		  PRINTF("RPL: Can't add a new neighbor in secure nodes table\n");
+		  PRINTF("RPL: Secure nodes table full, can't add a new neighbor\n");
 		  goto discard;
 	  } else {
 		  PRINTF("RPL: Start Challenge/Response with ");
 		  PRINT6ADDR(&src_addr);
-		  PRINTF(" with nonce: %u \n", nonce);
-		  cc_output(&src_addr, RPL_CC_REQUEST, nonce, p->sec_counter);
+		  PRINTF(" with nonce: %u \n", cc_nonce);
+		  cc_output(&src_addr, RPL_CC_REQUEST, cc_nonce, p->sec_counter);
 		  return;
 	  }
-  } */
-  if(p != NULL){
+  } else{
 	  if(p->counter_trusted == RPL_SEC_COUNTER_TRUSTED){
+		  /* Watermark!=0 and Incoming counter==0 -> Possible node reboot */
 		  if((p->sec_counter != 0) && (counter == 0)){
 			 PRINTF("RPL: Node reboot, sending CC response with counter %lu\n", p->sec_counter);
 			 cc_output(&src_addr, RPL_CC_RESPONSE, 0, p->sec_counter);
-			 /* NO return, the node is trusted and rebooted, so we send him a DIO */
+			 /* NO return, the node is trusted, so we send him a DIO */
 		  } else {
 			  if(p->sec_counter >= counter){
 				  PRINTF("RPL: Possible Replay Attack, discard\n");
@@ -565,6 +565,11 @@ dis_input(void)
 				  p->sec_counter = counter;
 			  }
 		  }
+	  } else {
+		 PRINTF("RPL: Node not trusted yet, restart CC Challenge/Response\n");
+		 p->lifetime_nonce = cc_nonce;
+		 cc_output(&src_addr, RPL_CC_REQUEST, cc_nonce, p->sec_counter);
+		 return;
 	  }
   }
 #endif
@@ -1508,7 +1513,7 @@ fwd_dao:
 }
 /*---------------------------------------------------------------------------*/
 static void
-dao_input_nonstoring(int sec_len, uint8_t mic_len)
+dao_input_nonstoring(int sec_len, uint8_t mic_len, uint8_t sec_counter_trusted)
 {
 #if RPL_WITH_NON_STORING
   uip_ipaddr_t dao_sender_addr;
@@ -1597,6 +1602,40 @@ dao_input_nonstoring(int sec_len, uint8_t mic_len)
   PRINT6ADDR(&dao_parent_addr);
   PRINTF(" \n");
 
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+  uint16_t cc_nonce;
+  cc_nonce = random_rand();
+  rpl_ns_node_t *p;
+  uint32_t incoming_counter;
+  p = rpl_ns_get_node(dag, &dao_sender_addr);
+
+  /* p == NULL -> we received a new DAO from a new node,
+   * we process as not trusted and we start a challenge/response with it.
+   * p != NULL -> the node is trusted and it's a regular DAO from a node
+   */
+  if(p == NULL){
+	  if(lifetime == RPL_ZERO_LIFETIME) {
+	    PRINTF("RPL: No-Path DAO received\n");
+	    rpl_ns_expire_parent(dag, &prefix, &dao_parent_addr);
+	  } else {
+	    if(rpl_ns_update_node(dag, &prefix, &dao_parent_addr, RPL_LIFETIME(instance, lifetime)) == NULL) {
+	      PRINTF("RPL: failed to add link\n");
+	      return;
+	    }
+	  }
+	  p = rpl_ns_get_node(dag, &dao_sender_addr);
+	  p->counter_trusted = RPL_SEC_COUNTER_NOT_TRUSTED;
+	  incoming_counter = get32(buffer,4);
+	  p->sec_counter = 0;
+	  p->sec_lifetime_nonce = cc_nonce;
+
+	  PRINTF("RPL: Start Challenge/Response with ");
+	  PRINT6ADDR(&dao_sender_addr);
+	  PRINTF(" with nonce: %u \n", cc_nonce);
+	  cc_output(&dao_sender_addr, RPL_CC_REQUEST, cc_nonce, p->sec_counter);
+	  return;
+  }
+#else
   if(lifetime == RPL_ZERO_LIFETIME) {
     PRINTF("RPL: No-Path DAO received\n");
     rpl_ns_expire_parent(dag, &prefix, &dao_parent_addr);
@@ -1606,13 +1645,13 @@ dao_input_nonstoring(int sec_len, uint8_t mic_len)
       return;
     }
   }
-
   if(flags & RPL_DAO_K_FLAG) {
     PRINTF("RPL: Sending DAO ACK\n");
     uip_clear_buf();
     dao_ack_output(instance, &dao_sender_addr, sequence,
                    RPL_DAO_ACK_UNCONDITIONAL_ACCEPT);
   }
+#endif  /* RPL_SEC_REPLAY_PROTECTION */
 #endif /* RPL_WITH_NON_STORING */
 }
 /*---------------------------------------------------------------------------*/
@@ -1627,7 +1666,7 @@ dao_input(void)
 #if RPL_SECURITY
   uint8_t mic_len;      /* n-byte MAC length */
   rpl_sec_section_t sec_section;
-#endif
+#endif /* RPL_SECURITY */
 
   /* Destination Advertisement Object */
   PRINTF("RPL: Received a DAO from ");
@@ -1652,6 +1691,9 @@ dao_input(void)
 
   pos = 0;
 
+  /* Remove possible extension headers in uip_buffer
+   * Otherwise Mic mismatch will occur.
+   */
   rpl_remove_header();
   buffer = UIP_ICMP_PAYLOAD;
 
@@ -1672,51 +1714,6 @@ dao_input(void)
   counter = get32(buffer, pos);
   pos += 4;
 
-#if RPL_SEC_REPLAY_PROTECTION
-  uip_ipaddr_t src_addr;
-  uip_ipaddr_copy(&src_addr, &UIP_IP_BUF->srcipaddr);
-  rpl_sec_node_t *p = rpl_find_sec_node(&src_addr);
-
-  uint16_t cc_nonce;
-  cc_nonce = random_rand();
-
-  if(p == NULL){		/* No incoming counter, start challenge/response */
-	  rpl_icmp6_update_nbr_table(&UIP_IP_BUF->srcipaddr,
-	                             NBR_TABLE_REASON_RPL_REPLAY_PROTECTION, NULL);*/
-	  p = rpl_add_sec_node(&src_addr, cc_nonce);
-	  if(p == NULL){
-		  PRINTF("RPL: Secure nodes table full, can't add a new neighbor\n");
-		  goto discard;
-	  } else {
-		  PRINTF("RPL: Start Challenge/Response with ");
-		  PRINT6ADDR(&src_addr);
-		  PRINTF(" with nonce: %u \n", cc_nonce);
-		  cc_output(&src_addr, RPL_CC_REQUEST, cc_nonce, p->sec_counter);
-		  return;
-	  }
-  } else{
-	  if(p->counter_trusted == RPL_SEC_COUNTER_TRUSTED){
-		  /* Watermark!=0 and Incoming counter==0 -> Possible node reboot */
-		  if((p->sec_counter != 0) && (counter == 0)){
-			 PRINTF("RPL: Node reboot, sending CC response with counter %lu\n", p->sec_counter);
-			 cc_output(&src_addr, RPL_CC_RESPONSE, 0, p->sec_counter);
-			 return;
-		  } else {
-			  if(p->sec_counter >= counter){
-				  PRINTF("RPL: Possible Replay Attack, discard\n");
-				  goto discard;
-			  } else {
-				  p->sec_counter = counter;
-			  }
-		  }
-	  } else {
-		 PRINTF("RPL: Node not trusted yet, restart CC Challenge/Response\n");
-		 p->lifetime_nonce = cc_nonce;
-		 cc_output(&src_addr, RPL_CC_REQUEST, cc_nonce, p->sec_counter);
-		 return;
-	  }
-  }
-#endif
   /* We are in KIM = 0, only key_index is present */
   key_index = buffer[pos++];
   /* Key_index must be zero because we use preinstalled key */
@@ -1754,6 +1751,88 @@ dao_input(void)
     goto discard;
   }
 
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+  uint16_t cc_nonce;
+  cc_nonce = random_rand();
+  uip_ipaddr_t src_addr;
+  uip_ipaddr_copy(&src_addr, &UIP_IP_BUF->srcipaddr);
+
+#if RPL_WITH_STORING
+  rpl_sec_node_t *p = rpl_find_sec_node(&src_addr);
+
+  if(p == NULL){		/* No incoming counter, start challenge/response */
+	  rpl_icmp6_update_nbr_table(&UIP_IP_BUF->srcipaddr,
+	                             NBR_TABLE_REASON_RPL_REPLAY_PROTECTION, NULL);*/
+	  p = rpl_add_sec_node(&src_addr, cc_nonce);
+	  if(p == NULL){
+		  PRINTF("RPL: Secure nodes table full, can't add a new neighbor\n");
+		  goto discard;
+	  } else {
+		  PRINTF("RPL: Start Challenge/Response with ");
+		  PRINT6ADDR(&src_addr);
+		  PRINTF(" with nonce: %u \n", cc_nonce);
+		  cc_output(&src_addr, RPL_CC_REQUEST, cc_nonce, p->sec_counter);
+		  return;
+	  }
+  } else{
+	  if(p->counter_trusted == RPL_SEC_COUNTER_TRUSTED){
+		  /* Watermark!=0 and Incoming counter==0 -> Possible node reboot */
+		  if((p->sec_counter != 0) && (counter == 0)){
+			 PRINTF("RPL: Node reboot, sending CC response with counter %lu\n", p->sec_counter);
+			 cc_output(&src_addr, RPL_CC_RESPONSE, 0, p->sec_counter);
+			 return;
+		  } else {
+			  if(p->sec_counter >= counter){
+				  PRINTF("RPL: Possible Replay Attack, discard\n");
+				  goto discard;
+			  } else {
+				  p->sec_counter = counter;
+			  }
+		  }
+	  } else {
+		 PRINTF("RPL: Node not trusted yet, restart CC Challenge/Response\n");
+		 p->lifetime_nonce = cc_nonce;
+		 cc_output(&src_addr, RPL_CC_REQUEST, cc_nonce, p->sec_counter);
+		 return;
+	  }
+  }
+#elif RPL_WITH_NON_STORING
+  rpl_dag_t *dag = instance->current_dag;
+  rpl_ns_node_t *p;
+  p = rpl_ns_get_node(dag, &src_addr);
+
+  /* if (p == NULL)
+   * No incoming counter, process node as not trusted,
+   * in order to have a route to start challenge/response.
+   * This temporary route can't be used until counter passes
+   * CC challenge/response.
+   */
+  if(p != NULL){
+	  if(p->counter_trusted == RPL_SEC_COUNTER_TRUSTED){
+		  /* Watermark!=0 and Incoming counter==0 -> Possible node reboot */
+		  counter_trusted = RPL_SEC_COUNTER_TRUSTED;
+		  if((p->sec_counter != 0) && (counter == 0)){
+			  PRINTF("RPL: Node reboot, sending CC response with counter %lu\n", p->sec_counter);
+			  cc_output(&src_addr, RPL_CC_RESPONSE, 0, p->sec_counter);
+			  return;
+		  } else {
+			  if(p->sec_counter >= counter){
+				  PRINTF("RPL: Possible Replay Attack, discard\n");
+				  goto discard;
+			  } else {
+				  p->sec_counter = counter;
+			  }
+		  }
+	  } else {
+		  PRINTF("RPL: Node not trusted yet, restart CC Challenge/Response\n");
+		  p->sec_lifetime_nonce = cc_nonce;
+		  cc_output(&src_addr, RPL_CC_REQUEST, cc_nonce, p->sec_counter);
+		  return;
+	  }
+  }
+#endif  /* RPL_WITH_STORING/RPL_WITH_NON_STORING */
+#endif  /* RPL_SECURITY */
+
   if(RPL_IS_STORING(instance)) {
 #if RPL_SECURITY
 	dao_input_storing(sec_len, mic_len, (void *)&sec_section);
@@ -1762,10 +1841,14 @@ dao_input(void)
 #endif
   } else if(RPL_IS_NON_STORING(instance)) {
 #if RPL_SECURITY
+#if RPL_SEC_REPLAY_PROTECTION
     dao_input_nonstoring(sec_len, mic_len);
 #else
+    dao_input_nonstoring(sec_len, mic_len);
+#endif /* RPL_SEC_REPLAY_PROTECTION */
+#else
     dao_input_nonstoring(0,0);
-#endif
+#endif /* RPL_SECURITY */
   }
 
 discard:
@@ -2326,6 +2409,9 @@ cc_input(void)
   uint16_t nonce;
 
   rpl_sec_node_t *p;
+#if RPL_WITH_NON_STORING
+  rpl_ns_node_t *ns_p;
+#endif
 
   uint8_t timestamp;
   uint8_t kim;
@@ -2446,10 +2532,30 @@ cc_input(void)
 				  goto discard;
 			  }
 		  } else {
+#if RPL_WITH_NON_STORING
+			  rpl_dag_t *dag = rpl_get_dag(&from);
+			  ns_p = rpl_ns_get_node(dag, &from);
+			  if(ns_p != NULL){
+				  if(nonce == p->sec_lifetime_nonce){
+					  PRINTF("RPL: Node ");
+					  PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+					  PRINTF(" counter trusted\n");
+
+					  p->sec_lifetime_nonce = 0; /* TODO */
+					  p->counter_trusted = RPL_SEC_COUNTER_TRUSTED;
+					  p->sec_counter = counter;
+				  } else {
+					  PRINTF("RPL: CC challenge/response nonce mismatch, discard\n");
+					  goto discard;
+				  }
+			  } else {
+				  goto discard;
+			  }
+#endif
 			  goto discard;
 		  }
 	  }
-  } else {
+  } else {  /* CC_REQUEST */
 	  cc_output(&from, RPL_CC_RESPONSE, nonce, incoming_counter);
   }
 
@@ -2487,9 +2593,9 @@ cc_output(uip_ipaddr_t *addr, uint8_t type, uint16_t nonce, uint32_t inc_counter
 
   /*
    * There's the possibility the node we are sending a CC message is not in
-   * the dag yet. Get any dag, it will be the first dag joined by this node.
+   * the dag yet. In that case, set instance_id and DAGID as zero.
    */
-  dag = rpl_get_any_dag();		/* TODO */
+  dag = rpl_get_dag(addr);
 
   if(dag != NULL){
 	  buffer[pos++] = dag->instance->instance_id;

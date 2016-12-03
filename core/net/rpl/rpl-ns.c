@@ -56,6 +56,9 @@
 #include <limits.h>
 #include <string.h>
 
+#define UIP_IP_BUF       ((struct uip_ip_hdr *)&uip_buf[UIP_LLH_LEN])
+#define UIP_ICMP_BUF     ((struct uip_icmp_hdr *)&uip_buf[uip_l2_l3_hdr_len])
+
 /* Total number of nodes */
 static int num_nodes;
 
@@ -100,11 +103,30 @@ rpl_ns_is_node_reachable(const rpl_dag_t *dag, const uip_ipaddr_t *addr)
   int max_depth = RPL_NS_LINK_NUM;
   rpl_ns_node_t *node = rpl_ns_get_node(dag, addr);
   rpl_ns_node_t *root_node = rpl_ns_get_node(dag, dag != NULL ? &dag->dag_id : NULL);
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+  uint8_t is_path_secure = 1;
+  uint8_t is_cc = (UIP_IP_BUF->proto == UIP_PROTO_ICMP6) &&
+		          (UIP_PROTO_ICMP6->type == ICMP6_RPL) &&
+				  (UIP_PROTO_ICMP6->icode == RPL_CODE_CC);
+  while(node != NULL && node != root_node && max_depth > 0) {
+	  if(node->counter_trusted == RPL_SEC_COUNTER_NOT_TRUSTED){
+		  is_path_secure = 0;
+	  }
+      node = node->parent;
+      max_depth--;
+  }
+  if(is_cc){
+	  return node != NULL && node == root_node;
+  } else {
+	  return is_path_secure && node != NULL && node == root_node;
+  }
+#else
   while(node != NULL && node != root_node && max_depth > 0) {
     node = node->parent;
     max_depth--;
   }
   return node != NULL && node == root_node;
+#endif
 }
 /*---------------------------------------------------------------------------*/
 void
