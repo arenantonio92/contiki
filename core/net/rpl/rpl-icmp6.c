@@ -1838,11 +1838,7 @@ dao_input(void)
 #endif
   } else if(RPL_IS_NON_STORING(instance)) {
 #if RPL_SECURITY
-#if RPL_SEC_REPLAY_PROTECTION
     dao_input_nonstoring(sec_len, mic_len);
-#else
-    dao_input_nonstoring(sec_len, mic_len);
-#endif /* RPL_SEC_REPLAY_PROTECTION */
 #else
     dao_input_nonstoring(0,0);
 #endif /* RPL_SECURITY */
@@ -2522,7 +2518,7 @@ cc_input(void)
 				  PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
 				  PRINTF(" counter trusted\n");
 
-				  p->lifetime_nonce = 0; /* TODO */
+				  p->lifetime_nonce = RPL_DEFAULT_LIFETIME;
 				  p->counter_trusted = RPL_SEC_COUNTER_TRUSTED;
 				  p->sec_counter = counter;
 			  } else {

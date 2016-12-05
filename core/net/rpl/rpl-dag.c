@@ -138,19 +138,18 @@ nbr_callback(void *ptr)
   rpl_remove_parent(ptr);
 }
 
-#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
 static void
-children_callback(void *ptr){
-  nbr_table_remove(rpl_sec_nodes, ptr);
+sec_nodes_callback(void *ptr)
+{
+  nbr_table_remove(rpl_sec_nodes, (rpl_sec_node_t *)ptr);
 }
-#endif	/* RPL_REPLAY_PROTECTION */
 
 void
 rpl_dag_init(void)
 {
   nbr_table_register(rpl_parents, (nbr_table_callback *)nbr_callback);
 #if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
-  nbr_table_register(rpl_sec_nodes, (nbr_table_callback *)children_callback);
+  nbr_table_register(rpl_sec_nodes, sec_nodes_callback);
 #endif	/* RPL_REPLAY_PROTECTION */
 }
 
@@ -287,6 +286,34 @@ lollipop_greater_than(int a, int b)
     (a < b && (b - a) > (RPL_LOLLIPOP_CIRCULAR_REGION + 1-
 			 RPL_LOLLIPOP_SEQUENCE_WINDOWS));
 }
+/*---------------------------------------------------------------------------*/
+/* Remove nodes in rpl_sec_nodes tables if they aren't anymore in ds6_neighbors
+ * This check is done every RPL_DEFAULT_LIFETIME seconds.
+ */
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+static void
+rpl_remove_dead_sec_nodes(void)
+{
+  rpl_sec_node_t *p;
+  linkaddr_t addr;
+
+  PRINTF("RPL: Removing dead nodes from secure nodes table \n");
+
+  p = nbr_table_head(rpl_sec_nodes);
+  while(p != NULL) {
+	  p->lifetime_nonce--;
+	  if(p->lifetime_nonce < 0) {
+		  addr = nbr_table_get_lladdr(rpl_sec_nodes, p);
+		  if(nbr_table_get_from_lladdr(ds6_neighbors, addr) == NULL) {
+			  nbr_table_remove(rpl_sec_nodes, p);
+		  } else {
+			  p->lifetime_nonce = RPL_DEFAULT_LIFETIME;
+		  }
+	  }
+	  p = nbr_table_next(rpl_sec_nodes, p);
+  }
+}
+#endif
 /*---------------------------------------------------------------------------*/
 /* Remove DAG parents with a rank that is at least the same as minimum_rank. */
 static void

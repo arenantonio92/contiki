@@ -102,6 +102,11 @@ handle_periodic_timer(void *ptr)
     dis_output(NULL);
   }
 #endif
+
+  /* handle Replay Protection: Secure nodes table */
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+  rpl_remove_dead_sec_nodes();
+#endif
   ctimer_reset(&periodic_timer);
 }
 /*---------------------------------------------------------------------------*/
