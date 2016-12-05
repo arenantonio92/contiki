@@ -287,34 +287,6 @@ lollipop_greater_than(int a, int b)
 			 RPL_LOLLIPOP_SEQUENCE_WINDOWS));
 }
 /*---------------------------------------------------------------------------*/
-/* Remove nodes in rpl_sec_nodes tables if they aren't anymore in ds6_neighbors
- * This check is done every RPL_DEFAULT_LIFETIME seconds.
- */
-#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
-static void
-rpl_remove_dead_sec_nodes(void)
-{
-  rpl_sec_node_t *p;
-  linkaddr_t addr;
-
-  PRINTF("RPL: Removing dead nodes from secure nodes table \n");
-
-  p = nbr_table_head(rpl_sec_nodes);
-  while(p != NULL) {
-	  p->lifetime_nonce--;
-	  if(p->lifetime_nonce < 0) {
-		  addr = nbr_table_get_lladdr(rpl_sec_nodes, p);
-		  if(nbr_table_get_from_lladdr(ds6_neighbors, addr) == NULL) {
-			  nbr_table_remove(rpl_sec_nodes, p);
-		  } else {
-			  p->lifetime_nonce = RPL_DEFAULT_LIFETIME;
-		  }
-	  }
-	  p = nbr_table_next(rpl_sec_nodes, p);
-  }
-}
-#endif
-/*---------------------------------------------------------------------------*/
 /* Remove DAG parents with a rank that is at least the same as minimum_rank. */
 static void
 remove_parents(rpl_dag_t *dag, rpl_rank_t minimum_rank)
@@ -340,7 +312,6 @@ nullify_parents(rpl_dag_t *dag, rpl_rank_t minimum_rank)
 
   PRINTF("RPL: Nullifying parents (minimum rank %u)\n",
 	minimum_rank);
-
   p = nbr_table_head(rpl_parents);
   while(p != NULL) {
     if(dag == p->dag && p->rank >= minimum_rank) {
@@ -1425,6 +1396,34 @@ rpl_recalculate_ranks(void)
     p = nbr_table_next(rpl_parents, p);
   }
 }
+/*---------------------------------------------------------------------------*/
+/* Remove nodes in rpl_sec_nodes tables if they aren't anymore in ds6_neighbors
+ * This check is done every RPL_DEFAULT_LIFETIME seconds.
+ */
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+void
+rpl_remove_dead_sec_nodes(void)
+{
+  rpl_sec_node_t *p;
+  linkaddr_t *addr;
+
+  PRINTF("RPL: Removing dead nodes from secure nodes table \n");
+
+  p = nbr_table_head(rpl_sec_nodes);
+  while(p != NULL) {
+	  p->lifetime_nonce--;
+	  if(p->lifetime_nonce < 0) {
+		  addr = nbr_table_get_lladdr(rpl_sec_nodes, p);
+		  if(nbr_table_get_from_lladdr(ds6_neighbors, addr) == NULL) {
+			  nbr_table_remove(rpl_sec_nodes, p);
+		  } else {
+			  p->lifetime_nonce = RPL_DEFAULT_LIFETIME;
+		  }
+	  }
+	  p = nbr_table_next(rpl_sec_nodes, p);
+  }
+}
+#endif
 /*---------------------------------------------------------------------------*/
 int
 rpl_process_parent_event(rpl_instance_t *instance, rpl_parent_t *p)

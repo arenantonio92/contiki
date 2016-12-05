@@ -66,7 +66,7 @@
 #include <limits.h>
 #include <string.h>
 
-#define DEBUG DEBUG_PRINT
+#define DEBUG DEBUG_NONE
 
 #include "net/ip/uip-debug.h"
 
@@ -1379,6 +1379,7 @@ dao_input_storing(int sec_len, uint8_t mic_len, void *sec_section)
         set_ip_icmp_fields(rpl_get_parent_ipaddr(dag->preferred_parent),
         		           RPL_CODE_SEC_DAO);
         set_ccm_nonce(ccm_nonce, rpl_sec_counter, p->lvl);
+
 #if RPL_SEC_REPLAY_PROTECTION
         if(rpl_sec_counter_inc) {
       	  rpl_sec_counter++;
@@ -1602,26 +1603,31 @@ dao_input_nonstoring(int sec_len, uint8_t mic_len)
   PRINT6ADDR(&dao_parent_addr);
   PRINTF(" \n");
 
+
 #if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
   uint16_t cc_nonce;
   cc_nonce = random_rand();
   rpl_ns_node_t *p;
   p = rpl_ns_get_node(dag, &dao_sender_addr);
+#endif
 
+  if(lifetime == RPL_ZERO_LIFETIME) {
+    PRINTF("RPL: No-Path DAO received\n");
+    rpl_ns_expire_parent(dag, &prefix, &dao_parent_addr);
+  } else {
+    if(rpl_ns_update_node(dag, &prefix, &dao_parent_addr, RPL_LIFETIME(instance, lifetime)) == NULL) {
+      PRINTF("RPL: failed to add link\n");
+      return;
+    }
+  }
+
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
   /* p == NULL -> we received a new DAO from a new node,
    * we process as not trusted and we start a challenge/response with it.
    * p != NULL -> the node is trusted and it's a regular DAO from a node
+   * or is a node not trusted yet
    */
   if(p == NULL){
-	  if(lifetime == RPL_ZERO_LIFETIME) {
-	    PRINTF("RPL: No-Path DAO received\n");
-	    rpl_ns_expire_parent(dag, &prefix, &dao_parent_addr);
-	  } else {
-	    if(rpl_ns_update_node(dag, &prefix, &dao_parent_addr, RPL_LIFETIME(instance, lifetime)) == NULL) {
-	      PRINTF("RPL: failed to add link\n");
-	      return;
-	    }
-	  }
 	  p = rpl_ns_get_node(dag, &dao_sender_addr);
 	  p->counter_trusted = RPL_SEC_COUNTER_NOT_TRUSTED;
 	  p->sec_counter = 0;
@@ -1632,24 +1638,25 @@ dao_input_nonstoring(int sec_len, uint8_t mic_len)
 	  PRINTF(" with nonce: %u \n", cc_nonce);
 	  cc_output(&dao_sender_addr, RPL_CC_REQUEST, cc_nonce, p->sec_counter);
 	  return;
-  }
-#else
-  if(lifetime == RPL_ZERO_LIFETIME) {
-    PRINTF("RPL: No-Path DAO received\n");
-    rpl_ns_expire_parent(dag, &prefix, &dao_parent_addr);
   } else {
-    if(rpl_ns_update_node(dag, &prefix, &dao_parent_addr, RPL_LIFETIME(instance, lifetime)) == NULL) {
-      PRINTF("RPL: failed to add link\n");
-      return;
-    }
+	  if(p->counter_trusted == RPL_SEC_COUNTER_NOT_TRUSTED){
+		  p->sec_lifetime_nonce = cc_nonce;
+
+		  PRINTF("RPL: Node not trusted yet, restart Challenge/Response with ");
+		  PRINT6ADDR(&dao_sender_addr);
+		  PRINTF(" with nonce: %u \n", cc_nonce);
+		  cc_output(&dao_sender_addr, RPL_CC_REQUEST, cc_nonce, p->sec_counter);
+		  return;
+	  }
   }
+#endif  /* RPL_SEC_REPLAY_PROTECTION */
+
   if(flags & RPL_DAO_K_FLAG) {
     PRINTF("RPL: Sending DAO ACK\n");
     uip_clear_buf();
     dao_ack_output(instance, &dao_sender_addr, sequence,
                    RPL_DAO_ACK_UNCONDITIONAL_ACCEPT);
   }
-#endif  /* RPL_SEC_REPLAY_PROTECTION */
 #endif /* RPL_WITH_NON_STORING */
 }
 /*---------------------------------------------------------------------------*/
@@ -1820,12 +1827,9 @@ dao_input(void)
 				  p->sec_counter = counter;
 			  }
 		  }
-	  } else {
-		  PRINTF("RPL: Node not trusted yet, restart CC Challenge/Response\n");
-		  p->sec_lifetime_nonce = cc_nonce;
-		  cc_output(&src_addr, RPL_CC_REQUEST, cc_nonce, p->sec_counter);
-		  return;
 	  }
+		  /* We should process the packet anyway if the node is already in the list
+		   * but not trusted.*/
   }
 #endif  /* RPL_WITH_STORING/RPL_WITH_NON_STORING */
 #endif  /* RPL_SECURITY */
@@ -2469,9 +2473,10 @@ cc_input(void)
 	  goto discard;
   }
 
-  /*rpl_icmp6_update_nbr_table(&UIP_IP_BUF->srcipaddr,
-                               NBR_TABLE_REASON_RPL_REPLAY_PROTECTION, NULL);
-   */
+  if(uip_is_addr_linklocal(&UIP_IP_BUF->srcipaddr)){
+	  rpl_icmp6_update_nbr_table(&UIP_IP_BUF->srcipaddr,
+                               	 NBR_TABLE_REASON_RPL_REPLAY_PROTECTION, NULL);
+  }
   instance_id = buffer[pos++];
 
   type = buffer[pos++];

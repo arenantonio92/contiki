@@ -116,6 +116,7 @@ rpl_ns_is_node_reachable(const rpl_dag_t *dag, const uip_ipaddr_t *addr)
       max_depth--;
   }
   if(is_cc){
+	  PRINTF("CC message\n");
 	  return node != NULL && node == root_node;
   } else {
 	  return is_path_secure && node != NULL && node == root_node;

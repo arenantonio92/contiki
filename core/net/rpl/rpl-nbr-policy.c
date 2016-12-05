@@ -248,13 +248,6 @@ rpl_nbr_policy_find_removable(nbr_table_reason_t reason,void * data)
     return find_removable_dao(&UIP_IP_BUF->srcipaddr, data);
   case NBR_TABLE_REASON_RPL_DIS:
     return find_removable_dis(&UIP_IP_BUF->srcipaddr);
-  case NBR_TABLE_REASON_RPL_REPLAY_PROTECTION:
-	/* It's reasonable to think a packet not secure as a DIS
-	 * because this reason is due to send packets to start challenge/response.
-	 * If a challenge/response will success, then the node will have a rank
-	 * and the policy should work properly.
-	 */
-	return find_removable_dis(&UIP_IP_BUF->srcipaddr);
   default:
     return NULL;
   }
