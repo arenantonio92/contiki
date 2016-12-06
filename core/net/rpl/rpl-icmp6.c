@@ -2172,7 +2172,7 @@ dao_ack_input(void)
 	  goto discard;
   }
 
-#endif
+#endif  /* RPL_SECURITY */
 
   instance_id = buffer[pos++];
   ++pos;
@@ -2241,7 +2241,6 @@ dao_ack_input(void)
 		  return;
 	  }
   }
-}
 #elif RPL_WITH_NON_STORING
   if(instance->root_counter_trusted == RPL_SEC_COUNTER_NOT_TRUSTED){
 		PRINTF("RPL: Start Challenge/Response with root, addr: ");
@@ -2501,6 +2500,10 @@ cc_input(void)
   instance_id = buffer[pos++];
 
   instance = rpl_get_instance(instance_id);
+
+  if(instance == NULL) {
+	  PRINTF("RPL: CC message with NULL instance\n");
+  }
 
   if(uip_is_addr_linklocal(&UIP_IP_BUF->srcipaddr)){
 	  rpl_icmp6_update_nbr_table(&UIP_IP_BUF->srcipaddr,
