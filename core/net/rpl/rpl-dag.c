@@ -586,6 +586,9 @@ rpl_alloc_instance(uint8_t instance_id)
 #if RPL_WITH_PROBING
       rpl_schedule_probing(instance);
 #endif /* RPL_WITH_PROBING */
+#if ((RPL_WITH_SECURITY)&RPL_SEC_REPLAY_PROTECTION)&RPL_WITH_NON_STORING
+      instance->root_counter_trusted = RPL_SEC_COUNTER_NOT_TRUSTED;
+#endif
       return instance;
     }
   }
