@@ -138,11 +138,13 @@ nbr_callback(void *ptr)
   rpl_remove_parent(ptr);
 }
 
+#if RPL_SECURITY && RPL_SEC_REPLAY_PROTECTION
 static void
 sec_nodes_callback(void *ptr)
 {
   nbr_table_remove(rpl_sec_nodes, (rpl_sec_node_t *)ptr);
 }
+#endif
 
 void
 rpl_dag_init(void)
