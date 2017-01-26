@@ -154,8 +154,6 @@ rpl_dag_init(void)
   nbr_table_register(rpl_sec_nodes, sec_nodes_callback);
 #endif	/* RPL_REPLAY_PROTECTION */
 }
-
-
 /*---------------------------------------------------------------------------*/
 rpl_parent_t *
 rpl_get_parent(uip_lladdr_t *addr)
@@ -314,6 +312,7 @@ nullify_parents(rpl_dag_t *dag, rpl_rank_t minimum_rank)
 
   PRINTF("RPL: Nullifying parents (minimum rank %u)\n",
 	minimum_rank);
+
   p = nbr_table_head(rpl_parents);
   while(p != NULL) {
     if(dag == p->dag && p->rank >= minimum_rank) {

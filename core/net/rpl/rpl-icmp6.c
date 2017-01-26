@@ -61,7 +61,7 @@
 #if RPL_SECURITY
 #include "lib/ccm-star.h"
 #include "lib/aes-128.h"
-#endif
+#endif /* RPL_SECURITY */
 
 #include <limits.h>
 #include <string.h>
@@ -112,7 +112,7 @@ static void dao_ack_input(void);
 
 #if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
 static void cc_input(void);
-#endif
+#endif /* (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION */
 
 static void dao_output_target_seq(rpl_parent_t *parent, uip_ipaddr_t *prefix,
                                   uint8_t lifetime, uint8_t seq_no);
@@ -155,13 +155,13 @@ UIP_ICMP6_HANDLER(dao_handler, ICMP6_RPL, RPL_CODE_SEC_DAO, dao_input);
 UIP_ICMP6_HANDLER(dao_ack_handler, ICMP6_RPL, RPL_CODE_SEC_DAO_ACK, dao_ack_input);
 #if RPL_SEC_REPLAY_PROTECTION
 UIP_ICMP6_HANDLER(cc_handler, ICMP6_RPL, RPL_CODE_CC, cc_input);
-#endif
+#endif /* RPL_SEC_REPLAY_PROTECTION */
 #else
 UIP_ICMP6_HANDLER(dis_handler, ICMP6_RPL, RPL_CODE_DIS, dis_input);
 UIP_ICMP6_HANDLER(dio_handler, ICMP6_RPL, RPL_CODE_DIO, dio_input);
 UIP_ICMP6_HANDLER(dao_handler, ICMP6_RPL, RPL_CODE_DAO, dao_input);
 UIP_ICMP6_HANDLER(dao_ack_handler, ICMP6_RPL, RPL_CODE_DAO_ACK, dao_ack_input);
-#endif
+#endif /* RPL_SECURITY */
 /*---------------------------------------------------------------------------*/
 
 #if RPL_WITH_DAO_ACK
@@ -384,56 +384,25 @@ sec_aead(uint8_t *ccm_nonce, int buffer_len, int sec_len,
 	  	                uip_buf + UIP_LLH_LEN, UIP_IPICMPH_LEN + sec_len,
 	  	                buffer + sec_len + buffer_len, mic_len, forward);
 	  } else {
-		  CCM_STAR.mic(ccm_nonce,
-	  	               buffer + sec_len, buffer_len,
-	  	               uip_buf + UIP_LLH_LEN, UIP_IPICMPH_LEN + sec_len,
-	  	               buffer + sec_len + buffer_len, mic_len);
+		 CCM_STAR.aead(ccm_nonce,
+                    NULL, 0,
+                    uip_buf + UIP_LLH_LEN, UIP_IPICMPH_LEN + sec_len + buffer_len,
+				    mic, mic_len, forward);
 	  }
-	  /*int i;
-	  PRINTF("IP: IP+ICMP header: ");
-	  for(i=UIP_LLH_LEN;i<UIP_LLH_LEN + UIP_IPICMPH_LEN; i++)
-		  PRINTF("%x", uip_buf[i]);
-	  PRINTF("\nIP: SEC Section: ");
-	  for(;i<UIP_LLH_LEN + UIP_IPICMPH_LEN + sec_len;i++)
-	  		  PRINTF("%x", uip_buf[i]);
-	  PRINTF("\nIP: RPL PAYLOAD: %d: ", buffer_len);
-	  for(;i<UIP_LLH_LEN + UIP_IPICMPH_LEN + sec_len + buffer_len;i++)
-	  		  PRINTF("%x", uip_buf[i]);
-	  PRINTF("\nIP: MIC: ");
-	  for(;i<UIP_LLH_LEN + UIP_IPICMPH_LEN + sec_len + buffer_len + mic_len;i++)
-	  		  PRINTF("%x", uip_buf[i]);
-	  PRINTF("\n");*/
 	  return mic_len;
   } else {
 	  if(forward == RPL_DECRYPT){
-		  /*int i;
-		  PRINTF("IP: IP+ICMP header: ");
-		  for(i=UIP_LLH_LEN;i<UIP_LLH_LEN + UIP_IPICMPH_LEN; i++)
-			  PRINTF("%x", uip_buf[i]);
-		  PRINTF("\nIP: SEC Section len %d: ", sec_len);
-		  for(;i<UIP_LLH_LEN + UIP_IPICMPH_LEN + sec_len;i++)
-		  		  PRINTF("%x", uip_buf[i]);
-		  PRINTF("\nIP: RPL PAYLOAD %d: ", buffer_len);
-		  for(;i<UIP_LLH_LEN + UIP_IPICMPH_LEN + sec_len + buffer_len;i++)
-		  		  PRINTF("%x", uip_buf[i]);
-		  PRINTF("\nIP: MIC received: ");
-		  for(;i<UIP_LLH_LEN + UIP_IPICMPH_LEN + sec_len + buffer_len + mic_len;i++)
-		  		  PRINTF("%x", uip_buf[i]);*/
 		  if(sec_lvl == 1 || sec_lvl == 3) {
 			  CCM_STAR.aead(ccm_nonce,
 					  	  	buffer + sec_len, buffer_len,
 		                    uip_buf + UIP_LLH_LEN, UIP_IPICMPH_LEN + sec_len,
 		                    mic, mic_len, forward);
 		  } else {
-		      CCM_STAR.mic(ccm_nonce,
-		    		  	   buffer + sec_len, buffer_len,
-		                   uip_buf + UIP_LLH_LEN, UIP_IPICMPH_LEN + sec_len,
-		                   mic, mic_len);
+		      CCM_STAR.aead(ccm_nonce,
+                      NULL, 0,
+                      uip_buf + UIP_LLH_LEN, UIP_IPICMPH_LEN + sec_len + buffer_len,
+    				  mic, mic_len, forward);
 		  }
-		  /*PRINTF("\n MIC computed: ");
-		  for(i=0;i<mic_len;i++)
-		  		  PRINTF("%x", mic[i]);
-		  PRINTF("\n");*/
 		  if(memcmp(mic, buffer + sec_len + buffer_len, mic_len) != 0) {
 		      return 0;
 		  } else {
@@ -572,7 +541,7 @@ dis_input(void)
 		 return;
 	  }
   }
-#endif
+#endif /* RPL_SEC_REPLAY_PROTECTION */
 
   /* We are in KIM = 0, only key_index is present */
   key_index = buffer[pos++];
@@ -603,7 +572,7 @@ dis_input(void)
   rpl_last_dis.key_source[0] = 0;
   rpl_last_dis.key_source[1] = 0;
   rpl_last_dis.key_index = key_index;
-#endif
+#endif /* RPL_SECURITY */
 
   for(instance = &instance_table[0], end = instance + RPL_MAX_INSTANCES;
       instance < end; ++instance) {
@@ -649,7 +618,7 @@ dis_output(uip_ipaddr_t *addr)
   int sec_len;
   uint8_t ccm_nonce[RPL_NONCE_LENGTH];
   uint8_t mic_len;      /* n-byte MAC length */
-#endif
+#endif /* RPL_SECURITY */
 
   pos = 0;
   buffer = UIP_ICMP_PAYLOAD;
@@ -658,7 +627,7 @@ dis_output(uip_ipaddr_t *addr)
   sec_len = add_security_section(RPL_TIMESTAMP_0, RPL_KIM_0,
 		  	  	  	  	  	  	 RPL_SEC_LVL_1, RPL_KEY_INDEX_0);
   pos += sec_len;
-#endif
+#endif /* RPL_SECURITY */
 
   /*
    * DAG Information Solicitation  - 2 bytes reserved
@@ -693,7 +662,7 @@ dis_output(uip_ipaddr_t *addr)
   }
 #else
   rpl_sec_counter++;
-#endif
+#endif /* RPL_SEC_REPLAY_PROTECTION */
 
   mic_len = sec_aead(ccm_nonce, pos - sec_len, sec_len, RPL_SEC_LVL_1, RPL_ENCRYPT);
 
@@ -702,7 +671,7 @@ dis_output(uip_ipaddr_t *addr)
   uip_icmp6_send(addr, ICMP6_RPL, RPL_CODE_SEC_DIS, pos);
 #else
   uip_icmp6_send(addr, ICMP6_RPL, RPL_CODE_DIS, pos);
-#endif
+#endif /* RPL_SECURITY */
 }
 /*---------------------------------------------------------------------------*/
 static void
@@ -817,7 +786,7 @@ dio_input(void)
 		 return;
 	  }
   }
-#endif
+#endif /* RPL_SEC_REPLAY_PROTECTION */
 
   /* We are in KIM = 0, only key_index is present */
   key_index = buffer[pos++];
@@ -839,7 +808,7 @@ dio_input(void)
       PRINTF("RPL: MIC mismatch\n");
 	  goto discard;
   }
-#endif
+#endif /* RPL_SECURITY */
 
   dio.instance_id = buffer[pos++];
   dio.version = buffer[pos++];
@@ -1042,7 +1011,7 @@ dio_output(rpl_instance_t *instance, uip_ipaddr_t *uc_addr)
   }
 
   pos += sec_len;
-#endif
+#endif /* RPL_SECURITY */
 
   buffer[pos++] = instance->instance_id;
   buffer[pos++] = dag->version;
@@ -1185,7 +1154,7 @@ dio_output(rpl_instance_t *instance, uip_ipaddr_t *uc_addr)
   }
 #else
   rpl_sec_counter++;
-#endif
+#endif /* RPL_SEC_REPLAY_PROTECTION */
 
   mic_len = sec_aead(ccm_nonce, pos - sec_len, sec_len, sec_lvl, RPL_ENCRYPT);
 
@@ -1194,7 +1163,7 @@ dio_output(rpl_instance_t *instance, uip_ipaddr_t *uc_addr)
   uip_icmp6_send(&addr, ICMP6_RPL, RPL_CODE_SEC_DIO, pos);
 #else
   uip_icmp6_send(&addr, ICMP6_RPL, RPL_CODE_DIO, pos);
-#endif
+#endif /* RPL_SECURITY */
 }
 /*---------------------------------------------------------------------------*/
 static void
@@ -1386,14 +1355,14 @@ dao_input_storing(int sec_len, uint8_t mic_len, void *sec_section)
         }
 #else
         rpl_sec_counter++;
-#endif
+#endif /* RPL_SEC_REPLAY_PROTECTION */
         sec_aead(ccm_nonce, buffer_length, sec_len, p->lvl, RPL_ENCRYPT);
 		uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
                        ICMP6_RPL, RPL_CODE_SEC_DAO, buffer_length + sec_len + mic_len);
 #else
 		uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
                        ICMP6_RPL, RPL_CODE_DAO, buffer_length);
-#endif
+#endif /* RPL_SECURITY */
       }
     }
     /* independent if we remove or not - ACK the request */
@@ -1493,7 +1462,7 @@ fwd_dao:
       }
 #else
       rpl_sec_counter++;
-#endif
+#endif /* RPL_SEC_REPLAY_PROTECTION */
       sec_aead(ccm_nonce, buffer_length, sec_len, p->lvl, RPL_ENCRYPT);
       uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
                      ICMP6_RPL, RPL_CODE_SEC_DAO,
@@ -1501,7 +1470,7 @@ fwd_dao:
 #else
       uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
                      ICMP6_RPL, RPL_CODE_DAO, buffer_length);
-#endif
+#endif /* RPL_SECURITY */
     }
     if(should_ack) {
       PRINTF("RPL: Sending DAO ACK\n");
@@ -1831,7 +1800,7 @@ dao_input(void)
 		  /* else {} We should process the packet anyway if the node is already in the list
 		   * but not trusted.*/
   }
-#endif  /* RPL_WITH_STORING/RPL_WITH_NON_STORING */
+#endif  /* RPL_WITH_NON_STORING */
 #endif  /* RPL_SECURITY */
 
   if(RPL_IS_STORING(instance)) {
@@ -2087,7 +2056,7 @@ dao_output_target_seq(rpl_parent_t *parent, uip_ipaddr_t *prefix,
     }
 #else
     rpl_sec_counter++;
-#endif
+#endif /* RPL_SEC_REPLAY_PROTECTION */
 
     mic_len = sec_aead(ccm_nonce, pos - sec_len, sec_len, RPL_SEC_LVL, RPL_ENCRYPT);
 
@@ -2096,7 +2065,7 @@ dao_output_target_seq(rpl_parent_t *parent, uip_ipaddr_t *prefix,
     uip_icmp6_send(dest_ipaddr, ICMP6_RPL, RPL_CODE_SEC_DAO, pos);
 #else
     uip_icmp6_send(dest_ipaddr, ICMP6_RPL, RPL_CODE_DAO, pos);
-#endif
+#endif /* RPL_SECURITY */
   }
 }
 /*---------------------------------------------------------------------------*/
@@ -2265,7 +2234,7 @@ dao_ack_input(void)
 			}
 		}
 	}
-#endif  /* RPL_WITH_STORING */
+#endif  /* RPL_WITH_NON_STORING */
 #endif  /* RPL_SEC_REPLAY_PROTECTION */
 
   PRINTF("RPL: Received a DAO %s with sequence number %d (%d) and status %d from ",
@@ -2395,8 +2364,7 @@ dao_ack_output(rpl_instance_t *instance, uip_ipaddr_t *dest, uint8_t sequence,
   }
 #else
   rpl_sec_counter++;
-#endif
-
+#endif /* RPL_SEC_REPLAY_PROTECTION */
   mic_len = sec_aead(ccm_nonce, pos - sec_len, sec_len, RPL_SEC_LVL, RPL_ENCRYPT);
 
   pos += mic_len;
@@ -2684,7 +2652,7 @@ cc_output(uip_ipaddr_t *addr, uint8_t type, uint16_t nonce, uint32_t inc_counter
 
   uip_icmp6_send(addr, ICMP6_RPL, RPL_CODE_CC, pos);
 }
-#endif
+#endif /* RPL_SEC_REPLAY_PROTECTION */
 /*---------------------------------------------------------------------------*/
 void
 rpl_icmp6_register_handlers()

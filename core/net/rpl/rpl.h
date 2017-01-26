@@ -39,6 +39,7 @@
 #define RPL_H
 
 #include "rpl-conf.h"
+
 #include "lib/list.h"
 #include "net/ip/uip.h"
 #include "net/ipv6/uip-ds6.h"
@@ -168,7 +169,6 @@ struct rpl_dag {
   struct rpl_instance *instance;
   rpl_prefix_t prefix_info;
   uint32_t lifetime;
-
 };
 typedef struct rpl_dag rpl_dag_t;
 typedef struct rpl_instance rpl_instance_t;
@@ -279,13 +279,11 @@ struct rpl_instance {
   rpl_rank_t max_rankinc;
   rpl_rank_t min_hoprankinc;
   uint16_t lifetime_unit; /* lifetime in seconds = l_u * d_l */
-
 #if RPL_SECURITY && RPL_SEC_REPLAY_PROTECTION && RPL_WITH_DAO_ACK
   uint32_t root_counter;
   uint8_t root_counter_trusted;
   uint16_t nonce;
 #endif
-
 #if RPL_CONF_STATS
   uint16_t dio_totint;
   uint16_t dio_totsend;
