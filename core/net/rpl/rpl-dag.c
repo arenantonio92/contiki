@@ -1415,13 +1415,15 @@ rpl_remove_dead_sec_nodes(void)
 
   p = nbr_table_head(rpl_sec_nodes);
   while(p != NULL) {
-	  p->lifetime_nonce--;
-	  if(p->lifetime_nonce < 0) {
-		  addr = nbr_table_get_lladdr(rpl_sec_nodes, p);
-		  if(nbr_table_get_from_lladdr(ds6_neighbors, addr) == NULL) {
-			  nbr_table_remove(rpl_sec_nodes, p);
-		  } else {
-			  p->lifetime_nonce = RPL_DEFAULT_LIFETIME;
+	  if(p->counter_trusted == RPL_SEC_COUNTER_TRUSTED){
+		  p->lifetime_nonce--;
+		  if(p->lifetime_nonce < 0) {
+			  addr = nbr_table_get_lladdr(rpl_sec_nodes, p);
+			  if(nbr_table_get_from_lladdr(ds6_neighbors, addr) == NULL) {
+				  nbr_table_remove(rpl_sec_nodes, p);
+			  } else {
+				  p->lifetime_nonce = RPL_DEFAULT_LIFETIME;
+			  }
 		  }
 	  }
 	  p = nbr_table_next(rpl_sec_nodes, p);
