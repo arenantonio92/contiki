@@ -1209,10 +1209,10 @@ rpl_join_instance(uip_ipaddr_t *from, rpl_dio_t *dio)
     default_instance = instance;
   }
 
-  PRINTF("RPL: Joined DAG with instance ID %u, rank %hu, DAG ID ",
+  printf("RPL: Joined DAG with instance ID %u, rank %hu, DAG ID ",
          dio->instance_id, dag->rank);
   PRINT6ADDR(&dag->dag_id);
-  PRINTF("\n");
+  printf("\n");
 
   ANNOTATE("#A join=%u\n", dag->dag_id.u8[sizeof(dag->dag_id) - 1]);
 
@@ -1417,7 +1417,7 @@ rpl_remove_dead_sec_nodes(void)
   while(p != NULL) {
 	  if(p->counter_trusted == RPL_SEC_COUNTER_TRUSTED){
 		  p->lifetime_nonce--;
-		  if(p->lifetime_nonce < 0) {
+		  if(p->lifetime_nonce == 0) {
 			  addr = nbr_table_get_lladdr(rpl_sec_nodes, p);
 			  if(nbr_table_get_from_lladdr(ds6_neighbors, addr) == NULL) {
 				  nbr_table_remove(rpl_sec_nodes, p);
