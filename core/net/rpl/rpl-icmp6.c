@@ -753,24 +753,22 @@ dio_input(void)
 
 #if RPL_SEC_REPLAY_PROTECTION
   uint8_t counter_valid = 0;
-  uip_ipaddr_t src_addr;
-  uip_ipaddr_copy(&src_addr, &UIP_IP_BUF->srcipaddr);
-  rpl_sec_node_t *p = rpl_find_sec_node(&src_addr);
+  rpl_sec_node_t *p = rpl_find_sec_node(&from);
 
   uint16_t cc_nonce;
   cc_nonce = random_rand();
 
 
   if(p == NULL){		/* No incoming counter, start challenge/response */
-	  rpl_icmp6_update_nbr_table(&UIP_IP_BUF->srcipaddr,
+	  rpl_icmp6_update_nbr_table(&from,
 	                             NBR_TABLE_REASON_RPL_REPLAY_PROTECTION, NULL);
-	  p = rpl_add_sec_node(&src_addr, cc_nonce);
+	  p = rpl_add_sec_node(&from, cc_nonce);
 	  if(p == NULL){
 		  PRINTF("RPL: Secure nodes table full, can't add a new neighbor\n");
 		  goto discard;
 	  } else {
 		  PRINTF("RPL: Start Challenge/Response with ");
-		  PRINT6ADDR(&src_addr);
+		  PRINT6ADDR(&from);
 		  PRINTF(" with nonce: %u \n", cc_nonce);
 	  }
   } else{
@@ -778,7 +776,7 @@ dio_input(void)
 		  /* Watermark!=0 and Incoming counter==0 -> Possible node reboot */
 		  if((p->sec_counter != 0) && (counter == 0)){
 			 PRINTF("RPL: Node reboot, sending CC response with counter %lu\n", p->sec_counter);
-			 cc_output(&src_addr, RPL_CC_RESPONSE, 0, p->sec_counter);
+			 cc_output(&from, RPL_CC_RESPONSE, 0, p->sec_counter);
 			 return;
 		  } else {
 			  if(p->sec_counter >= counter){
@@ -966,16 +964,23 @@ dio_input(void)
   RPL_DEBUG_DIO_INPUT(&from, &dio);
 #endif
 
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
   if(counter_valid == 1){
   	rpl_process_dio(&from, &dio);
   } else{
-  	PRINTF("RPL: Counter not valid, DIO in quarantine\n");
-  	memcpy(&rpl_last_dio, &dio, sizeof(rpl_dio_t));
-  	uip_ipaddr_copy(&rpl_dio_sender, &from);
-  	rpl_valid_dio = 1;
-  	cc_output(&src_addr, RPL_CC_REQUEST, cc_nonce, p->sec_counter);
-  	return;
+  		rpl_dag_t *dag = rpl_get_any_dag();
+  		if(dag == NULL){
+  			PRINTF("RPL: Counter isn't trusted yet, DIO in quarantine\n");
+  			memcpy(&rpl_last_dio, &dio, sizeof(rpl_dio_t));
+  			uip_ipaddr_copy(&rpl_dio_sender, &from);
+  			rpl_valid_dio = 1;
+  			cc_output(&from, RPL_CC_REQUEST, cc_nonce, p->sec_counter);
+  			return;
+  	}
   }
+#else
+  rpl_process_dio(&from, &dio);
+#endif
 
 discard:
   uip_clear_buf();
@@ -1283,144 +1288,144 @@ dao_input_storing(int sec_len, uint8_t mic_len, void *sec_section)
 
   /* Check if there are any RPL options present. */
   for(; pos < buffer_length + sec_len; pos += len){
-    subopt_type = buffer[pos];
-    if(subopt_type == RPL_OPTION_PAD1) {
-      len = 1;
-    } else {
-      /* The option consists of a two-byte header and a payload. */
-      len = 2 + buffer[pos + 1];
-    }
+  	subopt_type = buffer[pos];
+  	if(subopt_type == RPL_OPTION_PAD1) {
+  		len = 1;
+  	} else {
+  		/* The option consists of a two-byte header and a payload. */
+  		len = 2 + buffer[pos + 1];
+  	}
 
-    if(len + pos - sec_len > buffer_length) {
-      PRINTF("RPL: Invalid DAO packet\n");
-      RPL_STAT(rpl_stats.malformed_msgs++);
-      return;
-    }
+  	if(len + pos - sec_len > buffer_length) {
+  		PRINTF("RPL: Invalid DAO packet\n");
+  		RPL_STAT(rpl_stats.malformed_msgs++);
+  		return;
+  	}
 
-    switch(subopt_type) {
-    case RPL_OPTION_TARGET:
-      /* Handle the target option. */
-      prefixlen = buffer[pos + 3];
-      memset(&prefix, 0, sizeof(prefix));
-      memcpy(&prefix, buffer + pos + 4, (prefixlen + 7) / CHAR_BIT);
-      break;
-    case RPL_OPTION_TRANSIT:
-      /* The path sequence and control are ignored. */
-      /*      pathcontrol = buffer[pos + 3];
+  	switch(subopt_type) {
+  	case RPL_OPTION_TARGET:
+  		/* Handle the target option. */
+  		prefixlen = buffer[pos + 3];
+  		memset(&prefix, 0, sizeof(prefix));
+  		memcpy(&prefix, buffer + pos + 4, (prefixlen + 7) / CHAR_BIT);
+  		break;
+  	case RPL_OPTION_TRANSIT:
+  		/* The path sequence and control are ignored. */
+  		/*      pathcontrol = buffer[pos + 3];
               pathsequence = buffer[pos + 4];*/
-      lifetime = buffer[pos + 5];
-      /* The parent address is also ignored. */
-      break;
-    }
+  		lifetime = buffer[pos + 5];
+  		/* The parent address is also ignored. */
+  		break;
+  	}
   }
 
   PRINTF("RPL: DAO lifetime: %u, prefix length: %u prefix: ",
-         (unsigned)lifetime, (unsigned)prefixlen);
+  		(unsigned)lifetime, (unsigned)prefixlen);
   PRINT6ADDR(&prefix);
   PRINTF("\n");
 
 #if RPL_WITH_MULTICAST
   if(uip_is_addr_mcast_global(&prefix)) {
-    mcast_group = uip_mcast6_route_add(&prefix);
-    if(mcast_group) {
-      mcast_group->dag = dag;
-      mcast_group->lifetime = RPL_LIFETIME(instance, lifetime);
-    }
-    goto fwd_dao;
+  	mcast_group = uip_mcast6_route_add(&prefix);
+  	if(mcast_group) {
+  		mcast_group->dag = dag;
+  		mcast_group->lifetime = RPL_LIFETIME(instance, lifetime);
+  	}
+  	goto fwd_dao;
   }
 #endif
 
   rep = uip_ds6_route_lookup(&prefix);
 
   if(lifetime == RPL_ZERO_LIFETIME) {
-    PRINTF("RPL: No-Path DAO received\n");
-    /* No-Path DAO received; invoke the route purging routine. */
-    if(rep != NULL &&
-       !RPL_ROUTE_IS_NOPATH_RECEIVED(rep) &&
-       rep->length == prefixlen &&
-       uip_ds6_route_nexthop(rep) != NULL &&
-       uip_ipaddr_cmp(uip_ds6_route_nexthop(rep), &dao_sender_addr)) {
-      PRINTF("RPL: Setting expiration timer for prefix ");
-      PRINT6ADDR(&prefix);
-      PRINTF("\n");
-      RPL_ROUTE_SET_NOPATH_RECEIVED(rep);
-      rep->state.lifetime = RPL_NOPATH_REMOVAL_DELAY;
+  	PRINTF("RPL: No-Path DAO received\n");
+  	/* No-Path DAO received; invoke the route purging routine. */
+  	if(rep != NULL &&
+  			!RPL_ROUTE_IS_NOPATH_RECEIVED(rep) &&
+  			rep->length == prefixlen &&
+  			uip_ds6_route_nexthop(rep) != NULL &&
+  			uip_ipaddr_cmp(uip_ds6_route_nexthop(rep), &dao_sender_addr)) {
+  		PRINTF("RPL: Setting expiration timer for prefix ");
+  		PRINT6ADDR(&prefix);
+  		PRINTF("\n");
+  		RPL_ROUTE_SET_NOPATH_RECEIVED(rep);
+  		rep->state.lifetime = RPL_NOPATH_REMOVAL_DELAY;
 
-      /* We forward the incoming No-Path DAO to our parent, if we have
+  		/* We forward the incoming No-Path DAO to our parent, if we have
          one. */
-      if(dag->preferred_parent != NULL &&
-         rpl_get_parent_ipaddr(dag->preferred_parent) != NULL) {
-        uint8_t out_seq;
-        out_seq = prepare_for_dao_fwd(sequence, rep);
+  		if(dag->preferred_parent != NULL &&
+  				rpl_get_parent_ipaddr(dag->preferred_parent) != NULL) {
+  			uint8_t out_seq;
+  			out_seq = prepare_for_dao_fwd(sequence, rep);
 
-        PRINTF("RPL: Forwarding No-path DAO to parent ");
-        PRINT6ADDR(rpl_get_parent_ipaddr(dag->preferred_parent));
-        PRINTF("\n");
+  			PRINTF("RPL: Forwarding No-path DAO to parent ");
+  			PRINT6ADDR(rpl_get_parent_ipaddr(dag->preferred_parent));
+  			PRINTF("\n");
 
-		buffer = UIP_ICMP_PAYLOAD;
-        buffer[sec_len + 3] = out_seq; /* add an outgoing seq no before fwd */
+  			buffer = UIP_ICMP_PAYLOAD;
+  			buffer[sec_len + 3] = out_seq; /* add an outgoing seq no before fwd */
 
 #if RPL_SECURITY
-        add_security_section(p->timestamp, p->kim, p->lvl, p->key_index);
-        set_ip_icmp_fields(rpl_get_parent_ipaddr(dag->preferred_parent),
-        		           RPL_CODE_SEC_DAO);
-        set_ccm_nonce(ccm_nonce, rpl_sec_counter, p->lvl);
+  			add_security_section(p->timestamp, p->kim, p->lvl, p->key_index);
+  			set_ip_icmp_fields(rpl_get_parent_ipaddr(dag->preferred_parent),
+  					RPL_CODE_SEC_DAO);
+  			set_ccm_nonce(ccm_nonce, rpl_sec_counter, p->lvl);
 
 #if RPL_SEC_REPLAY_PROTECTION
-        if(rpl_sec_counter_inc) {
-      	  rpl_sec_counter++;
-        }
+  			if(rpl_sec_counter_inc) {
+  				rpl_sec_counter++;
+  			}
 #else
-        rpl_sec_counter++;
+  			rpl_sec_counter++;
 #endif /* RPL_SEC_REPLAY_PROTECTION */
-        sec_aead(ccm_nonce, buffer_length, sec_len, p->lvl, RPL_ENCRYPT);
-		uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
-                       ICMP6_RPL, RPL_CODE_SEC_DAO, buffer_length + sec_len + mic_len);
+  			sec_aead(ccm_nonce, buffer_length, sec_len, p->lvl, RPL_ENCRYPT);
+  			uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
+  					ICMP6_RPL, RPL_CODE_SEC_DAO, buffer_length + sec_len + mic_len);
 #else
-		uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
-                       ICMP6_RPL, RPL_CODE_DAO, buffer_length);
+  			uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
+  					ICMP6_RPL, RPL_CODE_DAO, buffer_length);
 #endif /* RPL_SECURITY */
-      }
-    }
-    /* independent if we remove or not - ACK the request */
-    if(flags & RPL_DAO_K_FLAG) {
-      /* indicate that we accepted the no-path DAO */
-      uip_clear_buf();
-      dao_ack_output(instance, &dao_sender_addr, sequence,
-                     RPL_DAO_ACK_UNCONDITIONAL_ACCEPT);
-    }
-    return;
+  		}
+  	}
+  	/* independent if we remove or not - ACK the request */
+  	if(flags & RPL_DAO_K_FLAG) {
+  		/* indicate that we accepted the no-path DAO */
+  		uip_clear_buf();
+  		dao_ack_output(instance, &dao_sender_addr, sequence,
+  				RPL_DAO_ACK_UNCONDITIONAL_ACCEPT);
+  	}
+  	return;
   }
 
   PRINTF("RPL: Adding DAO route\n");
 
   /* Update and add neighbor - if no room - fail. */
   if((nbr = rpl_icmp6_update_nbr_table(&dao_sender_addr, NBR_TABLE_REASON_RPL_DAO, instance)) == NULL) {
-    PRINTF("RPL: Out of Memory, dropping DAO from ");
-    PRINT6ADDR(&dao_sender_addr);
-    PRINTF(", ");
-    PRINTLLADDR((uip_lladdr_t *)packetbuf_addr(PACKETBUF_ADDR_SENDER));
-    PRINTF("\n");
-    if(flags & RPL_DAO_K_FLAG) {
-      /* signal the failure to add the node */
-      dao_ack_output(instance, &dao_sender_addr, sequence,
-                     is_root ? RPL_DAO_ACK_UNABLE_TO_ADD_ROUTE_AT_ROOT :
-                     RPL_DAO_ACK_UNABLE_TO_ACCEPT);
-    }
-    return;
+  	PRINTF("RPL: Out of Memory, dropping DAO from ");
+  	PRINT6ADDR(&dao_sender_addr);
+  	PRINTF(", ");
+  	PRINTLLADDR((uip_lladdr_t *)packetbuf_addr(PACKETBUF_ADDR_SENDER));
+  	PRINTF("\n");
+  	if(flags & RPL_DAO_K_FLAG) {
+  		/* signal the failure to add the node */
+  		dao_ack_output(instance, &dao_sender_addr, sequence,
+  				is_root ? RPL_DAO_ACK_UNABLE_TO_ADD_ROUTE_AT_ROOT :
+  						RPL_DAO_ACK_UNABLE_TO_ACCEPT);
+  	}
+  	return;
   }
 
   rep = rpl_add_route(dag, &prefix, prefixlen, &dao_sender_addr);
   if(rep == NULL) {
-    RPL_STAT(rpl_stats.mem_overflows++);
-    PRINTF("RPL: Could not add a route after receiving a DAO\n");
-    if(flags & RPL_DAO_K_FLAG) {
-      /* signal the failure to add the node */
-      dao_ack_output(instance, &dao_sender_addr, sequence,
-                     is_root ? RPL_DAO_ACK_UNABLE_TO_ADD_ROUTE_AT_ROOT :
-                     RPL_DAO_ACK_UNABLE_TO_ACCEPT);
-    }
-    return;
+  	RPL_STAT(rpl_stats.mem_overflows++);
+  	PRINTF("RPL: Could not add a route after receiving a DAO\n");
+  	if(flags & RPL_DAO_K_FLAG) {
+  		/* signal the failure to add the node */
+  		dao_ack_output(instance, &dao_sender_addr, sequence,
+  				is_root ? RPL_DAO_ACK_UNABLE_TO_ADD_ROUTE_AT_ROOT :
+  						RPL_DAO_ACK_UNABLE_TO_ACCEPT);
+  	}
+  	return;
   }
 
   /* set lifetime and clear NOPATH bit */
@@ -1428,73 +1433,73 @@ dao_input_storing(int sec_len, uint8_t mic_len, void *sec_section)
   RPL_ROUTE_CLEAR_NOPATH_RECEIVED(rep);
 
 #if RPL_WITH_MULTICAST
-fwd_dao:
+  fwd_dao:
 #endif
 
   if(learned_from == RPL_ROUTE_FROM_UNICAST_DAO) {
-    int should_ack = 0;
+  	int should_ack = 0;
 
-    if(flags & RPL_DAO_K_FLAG) {
-      /*
-       * check if this route is already installed and we can ack now!
-       * not pending - and same seq-no means that we can ack.
-       * (e.g. the route is installed already so it will not take any
-       * more room that it already takes - so should be ok!)
-       */
-      if((!RPL_ROUTE_IS_DAO_PENDING(rep) &&
-          rep->state.dao_seqno_in == sequence) ||
-         dag->rank == ROOT_RANK(instance)) {
-        should_ack = 1;
-      }
-    }
+  	if(flags & RPL_DAO_K_FLAG) {
+  		/*
+  		 * check if this route is already installed and we can ack now!
+  		 * not pending - and same seq-no means that we can ack.
+  		 * (e.g. the route is installed already so it will not take any
+  		 * more room that it already takes - so should be ok!)
+  		 */
+  		if((!RPL_ROUTE_IS_DAO_PENDING(rep) &&
+  				rep->state.dao_seqno_in == sequence) ||
+  				dag->rank == ROOT_RANK(instance)) {
+  			should_ack = 1;
+  		}
+  	}
 
-    if(dag->preferred_parent != NULL &&
-       rpl_get_parent_ipaddr(dag->preferred_parent) != NULL) {
-      uint8_t out_seq = 0;
-      /* if this is pending and we get the same seq no it is a retrans */
-      if(RPL_ROUTE_IS_DAO_PENDING(rep) &&
-         rep->state.dao_seqno_in == sequence) {
-        /* keep the same seq-no as before for parent also */
-        out_seq = rep->state.dao_seqno_out;
-      } else {
-        out_seq = prepare_for_dao_fwd(sequence, rep);
-      }
+  	if(dag->preferred_parent != NULL &&
+  			rpl_get_parent_ipaddr(dag->preferred_parent) != NULL) {
+  		uint8_t out_seq = 0;
+  		/* if this is pending and we get the same seq no it is a retrans */
+  		if(RPL_ROUTE_IS_DAO_PENDING(rep) &&
+  				rep->state.dao_seqno_in == sequence) {
+  			/* keep the same seq-no as before for parent also */
+  			out_seq = rep->state.dao_seqno_out;
+  		} else {
+  			out_seq = prepare_for_dao_fwd(sequence, rep);
+  		}
 
-      PRINTF("RPL: Forwarding DAO to parent ");
-      PRINT6ADDR(rpl_get_parent_ipaddr(dag->preferred_parent));
-      PRINTF(" in seq: %d out seq: %d\n", sequence, out_seq);
+  		PRINTF("RPL: Forwarding DAO to parent ");
+  		PRINT6ADDR(rpl_get_parent_ipaddr(dag->preferred_parent));
+  		PRINTF(" in seq: %d out seq: %d\n", sequence, out_seq);
 
-	  buffer = UIP_ICMP_PAYLOAD;
+  		buffer = UIP_ICMP_PAYLOAD;
 
-      buffer[sec_len + 3] = out_seq; /* add an outgoing seq no before fwd */
+  		buffer[sec_len + 3] = out_seq; /* add an outgoing seq no before fwd */
 
 #if RPL_SECURITY
-      add_security_section(p->timestamp, p->kim, p->lvl, p->key_index);
-      set_ip_icmp_fields(rpl_get_parent_ipaddr(dag->preferred_parent),
-    		  	  	     RPL_CODE_SEC_DAO);
-      set_ccm_nonce(ccm_nonce, rpl_sec_counter, p->lvl);
+  		add_security_section(p->timestamp, p->kim, p->lvl, p->key_index);
+  		set_ip_icmp_fields(rpl_get_parent_ipaddr(dag->preferred_parent),
+  				RPL_CODE_SEC_DAO);
+  		set_ccm_nonce(ccm_nonce, rpl_sec_counter, p->lvl);
 #if RPL_SEC_REPLAY_PROTECTION
-      if(rpl_sec_counter_inc) {
-    	  rpl_sec_counter++;
-      }
+  		if(rpl_sec_counter_inc) {
+  			rpl_sec_counter++;
+  		}
 #else
-      rpl_sec_counter++;
+  		rpl_sec_counter++;
 #endif /* RPL_SEC_REPLAY_PROTECTION */
-      sec_aead(ccm_nonce, buffer_length, sec_len, p->lvl, RPL_ENCRYPT);
-      uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
-                     ICMP6_RPL, RPL_CODE_SEC_DAO,
-					 buffer_length + sec_len + mic_len);
+  		sec_aead(ccm_nonce, buffer_length, sec_len, p->lvl, RPL_ENCRYPT);
+  		uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
+  				ICMP6_RPL, RPL_CODE_SEC_DAO,
+  				buffer_length + sec_len + mic_len);
 #else
-      uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
-                     ICMP6_RPL, RPL_CODE_DAO, buffer_length);
+  		uip_icmp6_send(rpl_get_parent_ipaddr(dag->preferred_parent),
+  				ICMP6_RPL, RPL_CODE_DAO, buffer_length);
 #endif /* RPL_SECURITY */
-    }
-    if(should_ack) {
-      PRINTF("RPL: Sending DAO ACK\n");
-      uip_clear_buf();
-      dao_ack_output(instance, &dao_sender_addr, sequence,
-                     RPL_DAO_ACK_UNCONDITIONAL_ACCEPT);
-    }
+  	}
+  	if(should_ack) {
+  		PRINTF("RPL: Sending DAO ACK\n");
+  		uip_clear_buf();
+  		dao_ack_output(instance, &dao_sender_addr, sequence,
+  				RPL_DAO_ACK_UNCONDITIONAL_ACCEPT);
+  	}
   }
 #endif /* RPL_WITH_STORING */
 }
@@ -2078,7 +2083,6 @@ dao_output_target_seq(rpl_parent_t *parent, uip_ipaddr_t *prefix,
     mic_len = sec_aead(ccm_nonce, pos - sec_len, sec_len, RPL_SEC_LVL, RPL_ENCRYPT);
 
     pos += mic_len;
-
     uip_icmp6_send(dest_ipaddr, ICMP6_RPL, RPL_CODE_SEC_DAO, pos);
 #else
     uip_icmp6_send(dest_ipaddr, ICMP6_RPL, RPL_CODE_DAO, pos);
@@ -2548,8 +2552,8 @@ cc_input(void)
   						PRINTF("RPL: Quarantine DIO from ");
   						PRINT6ADDR(&from);
   						PRINTF(" is still valid, process\n");
-  						rpl_valid_dio = 0;
   						rpl_process_dio(&rpl_dio_sender, &rpl_last_dio);
+  						rpl_valid_dio = 0;
   					}
   				}
   			} else {
@@ -2696,6 +2700,8 @@ rpl_icmp6_register_handlers()
 #if RPL_SECURITY
   rpl_last_dis.responded = RPL_DIS_RESPONDED;
 #if RPL_SEC_REPLAY_PROTECTION
+  rpl_valid_dio = 0;
+  dis_to_send = 0;
   uip_icmp6_register_input_handler(&cc_handler);
 #endif /* RPL_SEC_REPLAY_PROTECTION */
 #endif /* RPL_SECURITY */

@@ -76,31 +76,37 @@ static uint16_t next_dis;
 
 #if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
 static void handle_dis_timer(void *ptr);
-
+uint8_t dis_to_send;
 static uip_ipaddr_t dis_dest;
 static struct ctimer dis_timer;
 #endif
 
 /* dio_send_ok is true if the node is ready to send DIOs */
 static uint8_t dio_send_ok;
-
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
 /*---------------------------------------------------------------------------*/
 void
 rpl_schedule_dis(uip_ipaddr_t *dest)
 {
-	if(ctimer_expired(&dis_timer)){
+	if(ctimer_expired(&dis_timer) && dis_to_send==0){
 		clock_time_t ticks;
-
+		dis_to_send = 1;
 		uip_ipaddr_copy(&dis_dest, dest);
-		ticks = (50 * CLOCK_SECOND) / 1000;
+		ticks = (60 * CLOCK_SECOND) / 1000;
 		ctimer_set(&dis_timer, ticks, &handle_dis_timer, NULL);
 	}
 }
 /*---------------------------------------------------------------------------*/
 static void
 handle_dis_timer(void *ptr){
-	dis_output(&dis_dest);
+
+	if(dis_to_send == 1){
+		dis_output(&dis_dest);
+	  dis_to_send = 0;
+	}
+	ctimer_stop(&dis_timer);
 }
+#endif
 /*---------------------------------------------------------------------------*/
 static void
 handle_periodic_timer(void *ptr)

@@ -400,8 +400,10 @@ void rpl_schedule_dao_immediately(rpl_instance_t *);
 void rpl_schedule_unicast_dio_immediately(rpl_instance_t *instance);
 void rpl_cancel_dao(rpl_instance_t *instance);
 void rpl_schedule_probing(rpl_instance_t *instance);
+#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+extern uint8_t dis_to_send;
 void rpl_schedule_dis(uip_ipaddr_t *);
-
+#endif
 void rpl_reset_dio_timer(rpl_instance_t *);
 void rpl_reset_periodic_timer(void);
 

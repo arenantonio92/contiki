@@ -1209,10 +1209,10 @@ rpl_join_instance(uip_ipaddr_t *from, rpl_dio_t *dio)
     default_instance = instance;
   }
 
-  printf("RPL: Joined DAG with instance ID %u, rank %hu, DAG ID ",
+  PRINTF("RPL: Joined DAG with instance ID %u, rank %u, DAG ID ",
          dio->instance_id, dag->rank);
   PRINT6ADDR(&dag->dag_id);
-  printf("\n");
+  PRINTF("\n");
 
   ANNOTATE("#A join=%u\n", dag->dag_id.u8[sizeof(dag->dag_id) - 1]);
 
@@ -1299,7 +1299,7 @@ rpl_add_dag(uip_ipaddr_t *from, rpl_dio_t *dio)
   dag->rank = rpl_rank_via_parent(p);
   dag->min_rank = dag->rank; /* So far this is the lowest rank we know of. */
 
-  PRINTF("RPL: Joined DAG with instance ID %u, rank %hu, DAG ID ",
+  PRINTF("RPL: Joined DAG with instance ID %u, rank %u, DAG ID ",
          dio->instance_id, dag->rank);
   PRINT6ADDR(&dag->dag_id);
   PRINTF("\n");
