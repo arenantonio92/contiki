@@ -51,9 +51,8 @@
 
 #define UDP_EXAMPLE_ID  190
 
-#define SERVER_REPLY 1
-
 static struct uip_udp_conn *server_conn;
+
 
 PROCESS(udp_server_process, "UDP server process");
 AUTOSTART_PROCESSES(&udp_server_process);
@@ -113,27 +112,8 @@ PROCESS_THREAD(udp_server_process, ev, data)
   PRINTF("UDP server started. nbr:%d routes:%d\n",
          NBR_TABLE_CONF_MAX_NEIGHBORS, UIP_CONF_MAX_ROUTES);
 
-#if UIP_CONF_ROUTER
-/* The choice of server address determines its 6LoPAN header compression.
- * Obviously the choice made here must also be selected in udp-client.c.
- *
- * For correct Wireshark decoding using a sniffer, add the /64 prefix to the 6LowPAN protocol preferences,
- * e.g. set Context 0 to fd00::.  At present Wireshark copies Context/128 and then overwrites it.
- * (Setting Context 0 to fd00::1111:2222:3333:4444 will report a 16 bit compressed address of fd00::1111:22ff:fe33:xxxx)
- * Note Wireshark's IPCMV6 checksum verification depends on the correct uncompressed addresses.
- */
- 
-#if 0
-/* Mode 1 - 64 bits inline */
-   uip_ip6addr(&ipaddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 1);
-#elif 1
-/* Mode 2 - 16 bits inline */
-  uip_ip6addr(&ipaddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0x00ff, 0xfe00, 1);
-#else
-/* Mode 3 - derived from link local (MAC) address */
   uip_ip6addr(&ipaddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0);
   uip_ds6_set_addr_iid(&ipaddr, &uip_lladdr);
-#endif
 
   uip_ds6_addr_add(&ipaddr, 0, ADDR_MANUAL);
   root_if = uip_ds6_addr_lookup(&ipaddr);
@@ -142,11 +122,11 @@ PROCESS_THREAD(udp_server_process, ev, data)
     dag = rpl_set_root(RPL_DEFAULT_INSTANCE,(uip_ip6addr_t *)&ipaddr);
     uip_ip6addr(&ipaddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0);
     rpl_set_prefix(dag, &ipaddr, 64);
-    PRINTF("created a new RPL dag\n");
+    //PRINTF("created a new RPL dag\n");
   } else {
-    PRINTF("failed to create a new RPL DAG\n");
+    //PRINTF("failed to create a new RPL DAG\n");
   }
-#endif /* UIP_CONF_ROUTER */
+
   
   print_local_addresses();
 
@@ -161,10 +141,10 @@ PROCESS_THREAD(udp_server_process, ev, data)
   }
   udp_bind(server_conn, UIP_HTONS(UDP_SERVER_PORT));
 
-  PRINTF("Created a server connection with remote address ");
-  PRINT6ADDR(&server_conn->ripaddr);
-  PRINTF(" local/remote port %u/%u\n", UIP_HTONS(server_conn->lport),
-         UIP_HTONS(server_conn->rport));
+  //PRINTF("Created a server connection with remote address ");
+  //PRINT6ADDR(&server_conn->ripaddr);
+  //PRINTF(" local/remote port %u/%u\n", UIP_HTONS(server_conn->lport),
+    //     UIP_HTONS(server_conn->rport));
 
   while(1) {
     PROCESS_YIELD();

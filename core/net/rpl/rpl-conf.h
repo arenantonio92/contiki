@@ -354,6 +354,9 @@
 /*
  * RPL Pre-installed key for Secure Mode
  */
+
+#ifdef RPL_SECURITY
+
 #ifdef RPL_CONF_SECURITY_K
 #define RPL_SECURITY_K RPL_CONF_SECURITY_K
 #else
@@ -385,5 +388,17 @@
 #else
 #define RPL_SEC_REPLAY_PROTECTION   0
 #endif
+
+#if RPL_SEC_REPLAY_PROTECTION
+
+#ifdef RPL_SEC_CONF_CC_INTERVAL
+#define RPL_SEC_CC_INTERVAL RPL_SEC_CONF_CC_INTERVAL
+#else
+#define RPL_SEC_CC_INTERVAL   11
+#endif
+
+#endif
+
+#endif /* RPL_SECURITY */
 
 #endif /* RPL_CONF_H */

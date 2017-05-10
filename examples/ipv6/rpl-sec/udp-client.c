@@ -33,12 +33,15 @@
 #include "net/ip/uip.h"
 #include "net/ipv6/uip-ds6.h"
 #include "net/ip/uip-udp-packet.h"
+#include "dev/button-sensor.h"
 #include "sys/ctimer.h"
-#ifdef WITH_COMPOWER
+#if WITH_COMPOWER
 #include "powertrace.h"
 #endif
 #include <stdio.h>
 #include <string.h>
+
+#include "dev/watchdog.h"
 
 /* Only for TMOTE Sky? */
 #include "dev/serial-line.h"
@@ -63,8 +66,6 @@
 #define MAX_PAYLOAD_LEN		30
 
 
-#define SERVER_REPLY 1
-
 static struct uip_udp_conn *client_conn;
 static uip_ipaddr_t server_ipaddr;
 
@@ -74,6 +75,11 @@ AUTOSTART_PROCESSES(&udp_client_process);
 /*---------------------------------------------------------------------------*/
 static int seq_id;
 static int reply;
+
+void do_reboot(void)
+{
+   watchdog_reboot();
+}
 
 static void
 tcpip_handler(void)
@@ -158,31 +164,23 @@ set_global_address(void)
  * Note the IPCMV6 checksum verification depends on the correct uncompressed addresses.
  */
  
-#if 0
-/* Mode 1 - 64 bits inline */
-   uip_ip6addr(&server_ipaddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 1);
-#elif 1
-/* Mode 2 - 16 bits inline */
-  uip_ip6addr(&server_ipaddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0x00ff, 0xfe00, 1);
-#else
-/* Mode 3 - derived from server link-local (MAC) address */
-  uip_ip6addr(&server_ipaddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0x0250, 0xc2ff, 0xfea8, 0xcd1a); //redbee-econotag
-#endif
+
+   uip_ip6addr(&server_ipaddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0xc30c, 0, 0, 1);
+
 }
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(udp_client_process, ev, data)
 {
   static struct etimer periodic;
   static struct ctimer backoff_timer;
-#if WITH_COMPOWER
-  static int print = 0;
-#endif
 
   PROCESS_BEGIN();
 
   PROCESS_PAUSE();
 
   set_global_address();
+
+  SENSORS_ACTIVATE(button_sensor);
 
   PRINTF("UDP client process started nbr:%d routes:%d\n",
          NBR_TABLE_CONF_MAX_NEIGHBORS, UIP_CONF_MAX_ROUTES);
@@ -206,9 +204,8 @@ PROCESS_THREAD(udp_client_process, ev, data)
   //uart1_set_input(serial_line_input_byte);
   //serial_line_init();
 
-
 #if WITH_COMPOWER
-  powertrace_sniff(POWERTRACE_ON);
+  powertrace_start(CLOCK_SECOND * 30);
 #endif
 
   etimer_set(&periodic, SEND_INTERVAL);
@@ -255,7 +252,7 @@ PROCESS_THREAD(udp_client_process, ev, data)
     if(etimer_expired(&periodic)) {
       etimer_reset(&periodic);
       ctimer_set(&backoff_timer, SEND_TIME, send_packet, NULL);
-
+/*
 #if WITH_COMPOWER
       if (print == 0) {
 	powertrace_print("#P");
@@ -264,7 +261,12 @@ PROCESS_THREAD(udp_client_process, ev, data)
 	print = 0;
       }
 #endif
+*/
+    }
 
+    if (ev == sensors_event && data == &button_sensor) {
+          PRINTF("REBOOT\n");
+          do_reboot();
     }
   }
 

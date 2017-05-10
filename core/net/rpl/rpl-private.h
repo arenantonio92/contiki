@@ -79,6 +79,11 @@
 #define RPL_CODE_SEC_DAO_ACK           0x83   /* Secure DAO ACK */
 #define RPL_CODE_CC                    0x8A   /* Consistency Check */
 
+#if RPL_SEC_REPLAY_PROTECTION
+#define RPL_CC_RESPONSE         	   0x80
+#define RPL_CC_REQUEST				   0x00
+#endif /* RPL_SEC_REPLAY_PROTECTION */
+
 /* RPL control message options. */
 #define RPL_OPTION_PAD1                  0
 #define RPL_OPTION_PADN                  1
@@ -324,6 +329,18 @@ typedef struct rpl_stats rpl_stats_t;
 
 extern rpl_stats_t rpl_stats;
 #endif
+
+#if RPL_SEC_REPLAY_PROTECTION
+struct rpl_cc {
+ 	uint8_t locked;
+	uip_ipaddr_t dest;
+	uint8_t type;
+	uint16_t nonce;
+	uint32_t inc_counter;
+};
+
+typedef struct rpl_cc rpl_cc_t;
+#endif
 /*---------------------------------------------------------------------------*/
 /* RPL macros. */
 
@@ -366,7 +383,7 @@ void rpl_purge_dags(void);
 
 /* RPL Security: Replay Protection */
 #if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
-rpl_sec_node_t *rpl_add_sec_node(uip_ipaddr_t *addr, uint16_t nonce);
+rpl_sec_node_t *rpl_add_sec_node(uip_ipaddr_t *addr);
 rpl_sec_node_t *rpl_find_sec_node(uip_ipaddr_t *addr);
 #endif
 
@@ -401,8 +418,8 @@ void rpl_schedule_unicast_dio_immediately(rpl_instance_t *instance);
 void rpl_cancel_dao(rpl_instance_t *instance);
 void rpl_schedule_probing(rpl_instance_t *instance);
 #if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
-extern uint8_t dis_to_send;
 void rpl_schedule_dis(uip_ipaddr_t *);
+int rpl_schedule_cc(uip_ipaddr_t *, uint8_t, uint16_t, uint32_t);
 #endif
 void rpl_reset_dio_timer(rpl_instance_t *);
 void rpl_reset_periodic_timer(void);

@@ -725,7 +725,7 @@ rpl_add_parent(rpl_dag_t *dag, rpl_dio_t *dio, uip_ipaddr_t *addr)
 /*---------------------------------------------------------------------------*/
 #if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
 rpl_sec_node_t *
-rpl_add_sec_node(uip_ipaddr_t *addr, uint16_t nonce)
+rpl_add_sec_node(uip_ipaddr_t *addr)
 {
 	rpl_sec_node_t *p = NULL;
 
@@ -743,7 +743,6 @@ rpl_add_sec_node(uip_ipaddr_t *addr, uint16_t nonce)
 		if(p == NULL) {
 			PRINTF("RPL: rpl_add_sec_node p NULL\n");
 		} else {
-			p->lifetime_nonce = nonce;
 			p->sec_counter = 0;
 			p->counter_trusted = RPL_SEC_COUNTER_NOT_TRUSTED;
 		}
@@ -1411,8 +1410,6 @@ rpl_remove_dead_sec_nodes(void)
   rpl_sec_node_t *p;
   linkaddr_t *addr;
 
-  PRINTF("RPL: Removing dead nodes from secure nodes table \n");
-
   p = nbr_table_head(rpl_sec_nodes);
   while(p != NULL) {
 	  if(p->counter_trusted == RPL_SEC_COUNTER_TRUSTED){
@@ -1420,6 +1417,9 @@ rpl_remove_dead_sec_nodes(void)
 		  if(p->lifetime_nonce == 0) {
 			  addr = nbr_table_get_lladdr(rpl_sec_nodes, p);
 			  if(nbr_table_get_from_lladdr(ds6_neighbors, addr) == NULL) {
+				  PRINTF("RPL: Removing dead node ");
+				  PRINTLLADDR((uip_lladdr_t *)addr);
+				  PRINTF(" from secure nodes table\n");
 				  nbr_table_remove(rpl_sec_nodes, p);
 			  } else {
 				  p->lifetime_nonce = RPL_DEFAULT_LIFETIME;

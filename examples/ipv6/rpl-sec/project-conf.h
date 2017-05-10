@@ -49,17 +49,15 @@
 #define UIP_CONF_MAX_ROUTES   10
 #endif /* TEST_MORE_ROUTES */
 
+
 #undef NETSTACK_CONF_RDC
 #define NETSTACK_CONF_RDC     contikimac_driver
 
+#undef NETSTACK_CONF_MAC
+#define NETSTACK_CONF_MAC      csma_driver
 
-/* Define as minutes */
-#define RPL_CONF_DEFAULT_LIFETIME_UNIT   60
-
-/* 10 minutes lifetime of routes */
-#define RPL_CONF_DEFAULT_LIFETIME        10
-
-#define RPL_CONF_DEFAULT_ROUTE_INFINITE_LIFETIME 1
+#undef NETSTACK_CONF_FRAMER
+#define NETSTACK_CONF_FRAMER	framer_802154
 
 /* RPL Security Enable */
 #define RPL_CONF_SECURITY 	1 	/* Set this to enable Secure RPL */

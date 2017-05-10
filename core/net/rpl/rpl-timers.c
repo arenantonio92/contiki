@@ -75,36 +75,91 @@ static void handle_dio_timer(void *ptr);
 static uint16_t next_dis;
 
 #if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+
 static void handle_dis_timer(void *ptr);
-uint8_t dis_to_send;
+static uint8_t dis_to_send;
 static uip_ipaddr_t dis_dest;
 static struct ctimer dis_timer;
+
+static void handle_cc_timer(void *ptr);
+static struct ctimer cc_timer;
+static rpl_cc_t cc_msg;
 #endif
 
 /* dio_send_ok is true if the node is ready to send DIOs */
 static uint8_t dio_send_ok;
-#if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
+#if RPL_SEC_REPLAY_PROTECTION
 /*---------------------------------------------------------------------------*/
+int
+rpl_schedule_cc(uip_ipaddr_t *addr, uint8_t type, uint16_t nonce, uint32_t inc_counter)
+{
+  if(!ctimer_expired(&cc_timer)) {
+      PRINTF("RPL: A CC message is already waiting to send, drop this one\n");
+      return 0;
+  } else {
+      cc_msg.locked = 1;
+      uip_ipaddr_copy(&cc_msg.dest, addr);
+      cc_msg.type = type;
+      cc_msg.nonce = nonce;
+      cc_msg.inc_counter = inc_counter;
+      uint32_t time;
+      clock_time_t ticks;
+
+      time = 1UL << RPL_SEC_CC_INTERVAL;
+
+      /* Convert from milliseconds to CLOCK_TICKS. */
+      ticks = (time * CLOCK_SECOND) / 1000;
+
+      /* random number between RPL_SEC_CC_INTERVAL/2 and RPL_SEC_CC_INTERVAL */
+      ticks = ticks / 2 + (ticks / 2 * (uint32_t)random_rand()) / RANDOM_RAND_MAX;
+
+      /* schedule the timer */
+      PRINTF("RPL: Scheduling CC timer %lu ticks in future (Interval)\n", ticks);
+      ctimer_set(&cc_timer, ticks, &handle_cc_timer, NULL);
+      return 1;
+  }
+}
+/*---------------------------------------------------------------------------*/
+static void
+handle_cc_timer(void *ptr)
+{
+  PRINTF("RPL: Sending scheduled CC message to ");
+  PRINT6ADDR(&cc_msg.dest);
+  PRINTF(" with type: %u, nonce: %u, inc_counter: %lu\n",
+         cc_msg.type, cc_msg.nonce, cc_msg.inc_counter);
+
+  cc_output(&cc_msg.dest, cc_msg.type, cc_msg.nonce, cc_msg.inc_counter);
+  cc_msg.locked = 0;
+  ctimer_stop(&cc_timer);
+}
+/*---------------------------------------------------------------------------*/
+static void
+schedule_dis(uip_ipaddr_t *dest)
+{
+  if(dis_to_send == 0){
+      clock_time_t ticks;
+      dis_to_send = 1;
+      uip_ipaddr_copy(&dis_dest, dest);
+      ticks = (100 * CLOCK_SECOND) / 1000;
+      PRINTF("RPL: Scheduling DIS timer %lu ticks in future (Interval)\n", ticks);
+      ctimer_set(&dis_timer, ticks, &handle_dis_timer, NULL);
+  }
+}
+
 void
 rpl_schedule_dis(uip_ipaddr_t *dest)
 {
-	if(ctimer_expired(&dis_timer) && dis_to_send==0){
-		clock_time_t ticks;
-		dis_to_send = 1;
-		uip_ipaddr_copy(&dis_dest, dest);
-		ticks = (60 * CLOCK_SECOND) / 1000;
-		ctimer_set(&dis_timer, ticks, &handle_dis_timer, NULL);
-	}
+  schedule_dis(dest);
 }
 /*---------------------------------------------------------------------------*/
 static void
 handle_dis_timer(void *ptr){
-
-	if(dis_to_send == 1){
-		dis_output(&dis_dest);
-	  dis_to_send = 0;
-	}
-	ctimer_stop(&dis_timer);
+  PRINTF("RPL: Sending scheduled quick DIS message to: ");
+  PRINT6ADDR(&dis_dest);
+  PRINTF("\n");
+  dis_output(&dis_dest);
+  dis_to_send = 0;
+  ctimer_stop(&dis_timer);
 }
 #endif
 /*---------------------------------------------------------------------------*/
