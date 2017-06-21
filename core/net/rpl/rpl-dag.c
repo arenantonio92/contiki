@@ -755,6 +755,9 @@ rpl_find_sec_node(uip_ipaddr_t *addr)
 {
 	uip_ds6_nbr_t *ds6_nbr = uip_ds6_nbr_lookup(addr);
 	const uip_lladdr_t *lladdr = uip_ds6_nbr_get_ll(ds6_nbr);
+	PRINTF("RPL: Finding lladdr: ");
+	PRINTLLADDR(lladdr);
+	PRINTF("\n");
 	return nbr_table_get_from_lladdr(rpl_sec_nodes, (linkaddr_t *)lladdr);
 }
 #endif
@@ -1208,10 +1211,10 @@ rpl_join_instance(uip_ipaddr_t *from, rpl_dio_t *dio)
     default_instance = instance;
   }
 
-  PRINTF("RPL: Joined DAG with instance ID %u, rank %u, DAG ID ",
+  printf("RPL: Joined DAG with instance ID %u, rank %u, DAG ID ",
          dio->instance_id, dag->rank);
   PRINT6ADDR(&dag->dag_id);
-  PRINTF("\n");
+  printf("\n");
 
   ANNOTATE("#A join=%u\n", dag->dag_id.u8[sizeof(dag->dag_id) - 1]);
 
@@ -1298,10 +1301,10 @@ rpl_add_dag(uip_ipaddr_t *from, rpl_dio_t *dio)
   dag->rank = rpl_rank_via_parent(p);
   dag->min_rank = dag->rank; /* So far this is the lowest rank we know of. */
 
-  PRINTF("RPL: Joined DAG with instance ID %u, rank %u, DAG ID ",
+  printf("RPL: Joined DAG with instance ID %u, rank %u, DAG ID ",
          dio->instance_id, dag->rank);
   PRINT6ADDR(&dag->dag_id);
-  PRINTF("\n");
+  printf("\n");
 
   ANNOTATE("#A join=%u\n", dag->dag_id.u8[sizeof(dag->dag_id) - 1]);
 
@@ -1412,21 +1415,21 @@ rpl_remove_dead_sec_nodes(void)
 
   p = nbr_table_head(rpl_sec_nodes);
   while(p != NULL) {
-	  if(p->counter_trusted == RPL_SEC_COUNTER_TRUSTED){
-		  p->lifetime_nonce--;
-		  if(p->lifetime_nonce == 0) {
-			  addr = nbr_table_get_lladdr(rpl_sec_nodes, p);
-			  if(nbr_table_get_from_lladdr(ds6_neighbors, addr) == NULL) {
-				  PRINTF("RPL: Removing dead node ");
-				  PRINTLLADDR((uip_lladdr_t *)addr);
-				  PRINTF(" from secure nodes table\n");
-				  nbr_table_remove(rpl_sec_nodes, p);
-			  } else {
-				  p->lifetime_nonce = RPL_DEFAULT_LIFETIME;
-			  }
-		  }
+      if(p->counter_trusted == RPL_SEC_COUNTER_TRUSTED){
+	  p->lifetime_nonce--;
+	  if(p->lifetime_nonce == 0) {
+	      addr = nbr_table_get_lladdr(rpl_sec_nodes, p);
+	      if(nbr_table_get_from_lladdr(ds6_neighbors, addr) == NULL) {
+		  PRINTF("RPL: Removing dead node ");
+		  PRINTLLADDR((uip_lladdr_t *)addr);
+		  PRINTF(" from secure nodes table\n");
+		  nbr_table_remove(rpl_sec_nodes, p);
+	      } else {
+		  p->lifetime_nonce = RPL_DEFAULT_LIFETIME;
+	      }
 	  }
-	  p = nbr_table_next(rpl_sec_nodes, p);
+      }
+      p = nbr_table_next(rpl_sec_nodes, p);
   }
 }
 #endif

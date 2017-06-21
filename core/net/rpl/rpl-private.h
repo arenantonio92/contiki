@@ -95,8 +95,8 @@
 #define RPL_OPTION_SOLICITED_INFO        7
 #define RPL_OPTION_PREFIX_INFO           8
 #define RPL_OPTION_TARGET_DESC           9
-#define RPL_OPTION_NONCE_REQUEST		 20
-#define RPL_OPTION_NONCE_RESPONSE		 21
+#define RPL_OPTION_NONCE_REQUEST	 10
+#define RPL_OPTION_NONCE_RESPONSE        11
 
 #define RPL_DAO_K_FLAG                   0x80 /* DAO ACK requested */
 #define RPL_DAO_D_FLAG                   0x40 /* DODAG ID present */
@@ -363,7 +363,7 @@ void dao_output(rpl_parent_t *, uint8_t lifetime);
 void dao_output_target(rpl_parent_t *, uip_ipaddr_t *, uint8_t lifetime);
 void dao_ack_output(rpl_instance_t *, uip_ipaddr_t *, uint8_t, uint8_t);
 #if (RPL_SECURITY)&RPL_SEC_REPLAY_PROTECTION
-void cc_output(uip_ipaddr_t *, uint8_t, uint16_t, uint32_t);
+void cc_output(uip_ipaddr_t *, uint8_t, uint16_t, uint32_t, uint8_t, uint16_t);
 #endif
 void rpl_icmp6_register_handlers(void);
 uip_ds6_nbr_t *rpl_icmp6_update_nbr_table(uip_ipaddr_t *from,
